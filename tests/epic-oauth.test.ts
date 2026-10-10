@@ -1,0 +1,62 @@
+import { beforeAll, beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
+import { NextRequest } from 'next/server';
+import { exportJWK, generateKeyPair, jwtVerify, SignJWT } from 'jose';
+const session=vi.hoisted(()=>({identity:vi.fn(async()=>({sessionHash:'provider-a',identity:'local-provider',role:'provider'}))}));
+const db=vi.hoisted(()=>({connectDB:vi.fn(async()=>{throw new Error('MongoDB must not be used by development Epic OAuth.');})}));
+vi.mock('../src/lib/auth/session',()=>session);
+vi.mock('../src/lib/db/mongodb',()=>db);
+import { epicRoute } from '../src/lib/epic/http';
+import { epicStore } from '../src/lib/epic/store';
+import { tokenRequest } from '../src/lib/epic/client-auth';
+import { resourcePermission } from '../src/lib/epic/scopes';
+const base='https://fhir.epic.com/interconnect-fhir-oauth';
+let keys:Awaited<ReturnType<typeof generateKeyPair>>;
+let jwk:Awaited<ReturnType<typeof exportJWK>>;
+let currentNonce='';
+let grantBody:URLSearchParams|undefined;
+let grantHeaders:Record<string,string>|undefined;
+let tokenError:string|undefined;
+let wrongNonce=false;
+const fetchMock=vi.fn();
+const json=(value:unknown,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json'}});
+const request=(path:string)=>new NextRequest('http://localhost:3000/api/epic/'+path);
+beforeAll(async()=>{keys=await generateKeyPair('RS384',{extractable:true});jwk={...await exportJWK(keys.publicKey),kid:'unit-test',alg:'RS384'};});
+beforeEach(async()=>{
+ vi.stubEnv('NODE_ENV','test');vi.stubEnv('MONGODB_URI','');vi.stubEnv('AUTH_SECRET','unit-test-only-secret-with-at-least-32-characters');vi.stubEnv('EPIC_CLIENT_ID','unit-test-non-production-client');vi.stubEnv('EPIC_CLIENT_SECRET','test-secret:with/+special chars');vi.stubEnv('EPIC_TOKEN_AUTH_METHOD','client_secret_basic');vi.stubEnv('EPIC_REDIRECT_URI','http://localhost:3000/api/epic/callback');vi.stubEnv('EPIC_FHIR_BASE_URL',base+'/api/FHIR/R4/');vi.stubEnv('APP_URL','http://localhost:3000');vi.stubEnv('EPIC_SCOPES','openid fhirUser');
+ await epicStore.disconnect('provider-a');await epicStore.disconnect('provider-b');db.connectDB.mockClear();session.identity.mockResolvedValue({sessionHash:'provider-a',identity:'local-provider',role:'provider'});fetchMock.mockReset();tokenError=undefined;wrongNonce=false;grantBody=undefined;grantHeaders=undefined;
+ fetchMock.mockImplementation(async(url:string,init?:RequestInit)=>{
+  if(url.endsWith('/.well-known/smart-configuration'))return json({authorization_endpoint:base+'/oauth2/authorize',token_endpoint:base+'/oauth2/token',token_endpoint_auth_methods_supported:['client_secret_basic','client_secret_post','private_key_jwt'],code_challenge_methods_supported:['S256']});
+  if(url===base+'/oauth2/token'){
+   grantBody=init?.body as URLSearchParams;grantHeaders=init?.headers as Record<string,string>;
+   if(tokenError)return json({error:tokenError,error_description:'DO NOT DISPLAY THIS PRIVATE PAYLOAD'},400);
+   const idToken=await new SignJWT({nonce:wrongNonce?'wrong':currentNonce,fhirUser:base+'/api/FHIR/R4/Practitioner/synthetic-clinician'}).setProtectedHeader({alg:'RS384',kid:'unit-test'}).setIssuer(base+'/oauth2').setSubject('synthetic-clinician').setAudience('unit-test-non-production-client').setIssuedAt().setExpirationTime('5m').sign(keys.privateKey);
+   return json({access_token:'UNIT-TEST-ONLY-ACCESS-TOKEN',token_type:'Bearer',expires_in:1800,scope:'openid fhirUser',id_token:idToken});
+  }
+  if(url.endsWith('/.well-known/openid-configuration'))return json({issuer:base+'/oauth2',jwks_uri:base+'/oauth2/keys'});
+  if(url===base+'/oauth2/keys')return json({keys:[jwk]});
+  if(url.includes('/Patient?'))return json({resourceType:'Bundle',entry:[{resource:{resourceType:'Patient',id:'synthetic-patient',name:[{given:['Synthetic'],family:'Example'}]}}]});
+  if(url.endsWith('/Patient/synthetic-patient'))return json({resourceType:'Patient',id:'synthetic-patient',name:[{text:'Synthetic Example'}]});
+  if(url.includes('?patient='))return json({resourceType:'Bundle',entry:[]});
+  throw new Error('Unexpected test request: '+url);
+ });vi.stubGlobal('fetch',fetchMock);
+});
+afterEach(()=>{vi.unstubAllGlobals();vi.unstubAllEnvs();});
+async function start(){const response=await epicRoute(request('connect'));expect(response.status).toBe(307);const url=new URL(response.headers.get('location')!);currentNonce=url.searchParams.get('nonce')!;return url;}
+async function finish(url:URL){return epicRoute(request('callback?state='+url.searchParams.get('state')+'&code=synthetic-code'));}
+describe('Epic standalone OAuth wire flow — synthetic HTTP fixtures',()=>{
+ it('uses discovery, session-bound state and S256 without requiring patient context',async()=>{const url=await start();expect(url.origin+url.pathname).toBe(base+'/oauth2/authorize');expect(url.searchParams.get('code_challenge_method')).toBe('S256');expect(url.searchParams.get('launch')).toBeNull();expect(url.searchParams.get('scope')).toBe('openid fhirUser');expect(currentNonce.length).toBeGreaterThan(40);expect(db.connectDB).not.toHaveBeenCalled();});
+ it('exchanges with encoded Basic credentials and no client_id in body; stores only server-side tokens',async()=>{const url=await start();const result=await finish(url);expect(result.headers.get('location')).toContain('/provider?epic=connected');expect(grantBody?.get('client_id')).toBeNull();expect(grantBody?.get('redirect_uri')).toBe('http://localhost:3000/api/epic/callback');expect(grantBody?.get('code_verifier')).toBeTruthy();const encoded=(v:string)=>new URLSearchParams({v}).toString().slice(2);expect(Buffer.from(grantHeaders!.Authorization.slice(6),'base64').toString()).toBe(encoded('unit-test-non-production-client')+':'+encoded('test-secret:with/+special chars'));const status=await epicRoute(request('status'));const text=await status.text();expect(text).not.toContain('ACCESS-TOKEN');expect(text).not.toContain('encryptedToken');expect(JSON.parse(text).clinician.subject).toBe('synthetic-clinician');expect(JSON.parse(text).connected).toBe(true);expect(db.connectDB).not.toHaveBeenCalled();});
+ it('rejects missing/mismatched state before exchanging a code',async()=>{await start();const result=await epicRoute(request('callback?state=wrong&code=synthetic-code'));expect(result.headers.get('location')).toContain('epicError=');expect(fetchMock.mock.calls.some(c=>c[0]===base+'/oauth2/token')).toBe(false);});
+ it('binds state to its provider and consumes successful callbacks only once',async()=>{const url=await start();session.identity.mockResolvedValueOnce({sessionHash:'provider-b',identity:'other',role:'provider'});expect((await finish(url)).headers.get('location')).toContain('epicError=');expect((await finish(url)).headers.get('location')).toContain('epic=connected');expect((await finish(url)).headers.get('location')).toContain('epicError=');});
+ it('validates state even on denied authorization and does not exchange',async()=>{const url=await start();const result=await epicRoute(request('callback?state='+url.searchParams.get('state')+'&error=access_denied'));expect(decodeURIComponent(result.headers.get('location')!)).toContain('denied');expect(fetchMock.mock.calls.some(c=>c[0]===base+'/oauth2/token')).toBe(false);});
+ it('sanitizes OAuth errors and never substitutes a mock connection',async()=>{tokenError='invalid_client';const result=await finish(await start());expect(decodeURIComponent(result.headers.get('location')!)).toContain('confidential client');expect(result.headers.get('location')).not.toContain('PRIVATE');expect(await epicStore.getConnection('provider-a')).toBeNull();});
+ it('rejects a cryptographically signed identity with the wrong nonce',async()=>{wrongNonce=true;const result=await finish(await start());expect(decodeURIComponent(result.headers.get('location')!)).toContain('verification');expect(await epicStore.getConnection('provider-a')).toBeNull();});
+ it('retrieves Patient and independent chart resources without any patient token claim or database',async()=>{await finish(await start());const response=await epicRoute(request('patients?name=Synthetic'));expect((await response.json()).entry[0].resource.id).toBe('synthetic-patient');const chart=await (await epicRoute(request('patients/synthetic-patient/records'))).json();expect(chart.issuer).toBe(base+'/api/FHIR/R4');expect(chart.patientId).toBe('synthetic-patient');expect(chart.finalizedAvsRetrieved).toBe(false);expect(chart.results.map((r:{resourceType:string})=>r.resourceType)).toEqual(expect.arrayContaining(['Encounter','Condition','MedicationRequest','DocumentReference']));expect(db.connectDB).not.toHaveBeenCalled();});
+ it('uses explicit sandbox test-patient read when search is not permitted',async()=>{await finish(await start());const response=await epicRoute(request('patients?id=synthetic-patient'));expect((await response.json()).entry[0].resource.resourceType).toBe('Patient');});
+ it('rejects expired connections and clears tokens when Epic returns 401',async()=>{await epicStore.putConnection({sessionId:'provider-a',issuer:base+'/api/FHIR/R4',encryptedToken:'unused',scope:'openid',expiresAt:new Date(0)});expect((await epicRoute(request('patients?name=Synthetic'))).status).toBe(401);await finish(await start());fetchMock.mockImplementation(async()=>json({},401));expect((await epicRoute(request('patients?name=Synthetic'))).status).toBe(401);expect(await epicStore.getConnection('provider-a')).toBeNull();});
+ it('exposes forbidden records as an actionable error without invented data',async()=>{await finish(await start());fetchMock.mockImplementation(async()=>json({resourceType:'OperationOutcome'},403));const response=await epicRoute(request('patients?name=Synthetic'));expect(response.status).toBe(403);expect((await response.json()).error).toContain('registered APIs');});
+ it('rejects untrusted discovered authorization endpoints',async()=>{fetchMock.mockResolvedValue(json({authorization_endpoint:'https://attacker.example/authorize',token_endpoint:base+'/oauth2/token'}));const response=await epicRoute(request('connect'));expect(decodeURIComponent(response.headers.get('location')!)).toContain('Untrusted');});
+ it('supports registered client_secret_post without Basic authentication',async()=>{vi.stubEnv('EPIC_TOKEN_AUTH_METHOD','client_secret_post');const request=await tokenRequest('code','http://localhost:3000/api/epic/callback',base+'/oauth2/token');expect(request.headers.Authorization).toBeUndefined();expect(request.body.get('client_secret')).toBe('test-secret:with/+special chars');});
+ it('signs unique short-lived private_key_jwt assertions for the exact token audience',async()=>{const {exportPKCS8}=await import('jose');vi.stubEnv('EPIC_TOKEN_AUTH_METHOD','private_key_jwt');vi.stubEnv('EPIC_PRIVATE_KEY_PEM',await exportPKCS8(keys.privateKey));vi.stubEnv('EPIC_PRIVATE_KEY_ALG','RS384');vi.stubEnv('EPIC_PRIVATE_KEY_ID','unit-test');const a=await tokenRequest('code','http://localhost:3000/api/epic/callback',base+'/oauth2/token'),b=await tokenRequest('code','http://localhost:3000/api/epic/callback',base+'/oauth2/token');const verified=await jwtVerify(a.body.get('client_assertion')!,keys.publicKey,{issuer:'unit-test-non-production-client',audience:base+'/oauth2/token'});expect(verified.payload.sub).toBe('unit-test-non-production-client');expect(verified.payload.exp!-verified.payload.iat!).toBe(240);expect(a.body.get('client_assertion')).not.toBe(b.body.get('client_assertion'));expect(a.body.get('client_secret')).toBeNull();});
+});
+describe('Epic resource scope interpretation',()=>{it('handles SMART v1/v2 and Epic legacy scopes while leaving identity-only grants to Epic API authorization',()=>{expect(resourcePermission('openid','Patient',true)).toBeUndefined();expect(resourcePermission('user/Patient.rs','Patient',true)).toBe(true);expect(resourcePermission('Patient.read','Patient',false)).toBe(true);expect(resourcePermission('user/Patient.read','Condition')).toBe(false);expect(resourcePermission('Patient.search','Patient',false)).toBe(false);});});

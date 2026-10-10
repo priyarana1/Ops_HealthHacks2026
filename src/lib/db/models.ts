@@ -1,0 +1,21 @@
+import mongoose, { Schema } from 'mongoose';
+const ttl = (s: Schema) => { s.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); return s; };
+const patientSchema = ttl(new Schema({ patientId: { type: String, unique: true, required: true }, owner: { type: String, required: true }, source: { type: String, enum: ['epic_sandbox', 'manual'], required: true }, epicFhirIssuer: String, epicFhirPatientId: String, epicEncounterId: String, displayName: String, createdAt: { type: Date, required: true }, expiresAt: { type: Date, required: true } }));
+const planSchema = ttl(new Schema({ planId: { type: String, required: true, unique: true }, patientId: { type: String, required: true }, owner: { type: String, required: true }, epicEncounterId: String, source: { type: Schema.Types.Mixed, required: true }, clinicalInput: String, transcript: String, transcriptConfirmed: { type: Boolean, default: false }, structured: Schema.Types.Mixed, status: { type: String, enum: ['draft', 'review', 'approved', 'published', 'expired'], default: 'draft' }, approval: Schema.Types.Mixed, createdAt: { type: Date, required: true }, expiresAt: { type: Date, required: true }, revision: { type: Number, default: 0 } }));
+const accessSchema = ttl(new Schema({ planId: { type: String, required: true, index: true }, invitationHash: { type: String, unique: true }, otpHash: String, otpExpiresAt: Date, attempts: { type: Number, default: 0 }, activated: { type: Boolean, default: false }, sessionHash: String, sessionExpiresAt: Date, expiresAt: { type: Date, required: true } }));
+const auditSchema = new Schema({ eventId: { type: String, unique: true }, timestamp: Date, success: Boolean, technicalCode: String });
+// Durable deletion manifests deliberately have NO TTL: TTL must not erase cleanup work before S3 cleanup succeeds.
+const artifactSchema = new Schema({ planId: { type: String, required: true, index: true }, owner: String, key: String, outputKey: String, jobName: String, format: String, state: String, expiresAt: { type: Date, required: true }, attempts: { type: Number, default: 0 } });
+const connectionSchema = ttl(new Schema({ sessionId: { type: String, unique: true }, issuer: String, encryptedToken: String, scope: String, clinician: Schema.Types.Mixed, identityMessage: String, expiresAt: Date }));
+const sessionSchema = ttl(new Schema({ sessionHash: { type: String, unique: true }, role: String, isAdmin: { type: Boolean, default: false }, identity: String, planId: String, expiresAt: Date }));
+const oauthSchema = ttl(new Schema({ stateHash: { type: String, unique: true }, sessionId: String, verifier: String, tokenEndpoint: String, nonce: String, authMethods: [String], redirectUri: String, clientId: String, scope: String, expiresAt: Date }));
+const limiterSchema = ttl(new Schema({ key: { type: String, unique: true }, count: Number, expiresAt: Date }));
+export const Patient = mongoose.models.Patient || mongoose.model('Patient', patientSchema);
+export const DischargePlan = mongoose.models.DischargePlan || mongoose.model('DischargePlan', planSchema);
+export const PatientAccess = mongoose.models.PatientAccess || mongoose.model('PatientAccess', accessSchema);
+export const DeletionAudit = mongoose.models.DeletionAudit || mongoose.model('DeletionAudit', auditSchema);
+export const Artifact = mongoose.models.Artifact || mongoose.model('Artifact', artifactSchema);
+export const EpicConnection = mongoose.models.EpicConnection || mongoose.model('EpicConnection', connectionSchema);
+export const AppSession = mongoose.models.AppSession || mongoose.model('AppSession', sessionSchema);
+export const OAuthAttempt = mongoose.models.OAuthAttempt || mongoose.model('OAuthAttempt', oauthSchema);
+export const RateLimit = mongoose.models.RateLimit || mongoose.model('RateLimit', limiterSchema);
