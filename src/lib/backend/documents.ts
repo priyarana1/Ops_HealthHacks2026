@@ -11,7 +11,7 @@ export async function extractDocument(name:string,mime:string,buffer:Buffer) {
   if(buffer.subarray(0,5).toString()!=='%PDF-')throw new AppError(415,'File content is not a PDF.');
   const sdk=optionalDependency<{PDFParse:new(input:{data:Uint8Array;isEvalSupported:boolean;verbosity:number})=>{getInfo():Promise<{total:number}>;getText():Promise<{text:string}>;destroy():Promise<void>}}>('pdf-parse');
   const parser=new sdk.PDFParse({data:new Uint8Array(buffer),isEvalSupported:false,verbosity:0});
-  try{const info=await parser.getInfo();if(info.total>100)throw new AppError(413,'PDF exceeds 100 pages; split it rather than silently truncating instructions.');text=(await parser.getText()).text;}catch(e){if(e instanceof AppError)throw e;throw new AppError(422,'PDF text extraction failed. Supply a readable, unencrypted document or paste text.');}finally{await parser.destroy().catch(()=>{});}documentType='application/pdf';
+  try{const info=await parser.getInfo();if(info.total>100)throw new AppError(413,'PDF exceeds 100 pages; split it rather than silently truncating instructions.');text=normalizePdfText((await parser.getText()).text);}catch(e){if(e instanceof AppError)throw e;throw new AppError(422,'PDF text extraction failed. Supply a readable, unencrypted document or paste text.');}finally{await parser.destroy().catch(()=>{});}documentType='application/pdf';
  }else if(ext==='docx' && ['application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/octet-stream',''].includes(mime)){
   if(buffer.length<4 || buffer.readUInt32LE(0)!==0x04034b50)throw new AppError(415,'File content is not a DOCX archive.');
   validateDocxArchive(buffer);
@@ -19,6 +19,19 @@ export async function extractDocument(name:string,mime:string,buffer:Buffer) {
   try{text=(await mammoth.extractRawText({buffer})).value;}catch{throw new AppError(422,'DOCX extraction failed. Supply a valid document or paste text.');}documentType='application/vnd.openxmlformats-officedocument.wordprocessingml.document';
  }else throw new AppError(415,'Supported uploads are PDF, DOCX and UTF-8 TXT; extension, MIME type and content must agree.');
  text=text.trim();if(text.length<10)throw new AppError(422,'No readable discharge text was found. Scanned PDFs require OCR outside this prototype.');if(text.length>120000)throw new AppError(413,'Extracted text exceeds 120,000 characters.');return {text,documentType};
+}
+// PDF text arrives hard-wrapped at the page width, with page markers and tab-separated bullets.
+// Rejoin wrapped lines so evidence quotes match the stored source as written; words are never changed.
+export function normalizePdfText(raw:string){
+ const bullet=/^\s*(?:[•▪◦·*-]|\d+[.)])\s/;
+ const lines=raw.replace(/\r/g,'').split('\n').map(l=>l.replace(/^(\s*[•▪◦·])\s*\t\s*/,'$1 ').replace(/\t/g,' ').replace(/ {2,}/g,' ').trimEnd()).filter(l=>l.trim() && !/^\s*--\s*\d+\s+of\s+\d+\s*--\s*$/.test(l));
+ const width=Math.max(0,...lines.map(l=>l.length)),out:string[]=[];
+ for(const line of lines){
+  const prev=out[out.length-1];
+  if(prev!==undefined && prev.length>=width*0.7 && !/[.:;!?]$/.test(prev) && !bullet.test(line))out[out.length-1]=/[A-Za-z]-$/.test(prev)?prev+line.trim():prev+' '+line.trim();
+  else out.push(line);
+ }
+ return out.join('\n');
 }
 export function validateDocxArchive(buffer:Buffer){
  // Inspect central directory BEFORE decompression to bound ZIP expansion.

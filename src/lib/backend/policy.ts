@@ -19,6 +19,26 @@ export function extractionDateCandidates(text:string){return [...text.matchAll(/
 export class ClinicalValidationError extends AppError {
  constructor(message:string,readonly retryFeedback:string){super(422,message);}
 }
+// Typography-only normalization for comparing quotes: line breaks, curly quotes, dash styles and
+// non-breaking spaces must not make an exact quote fail. Words, numbers and units are compared as written.
+const squash=(v:string)=>v.normalize('NFKC').replace(/[\u2018\u2019\u201B\u2032]/g,"'").replace(/[\u201C\u201D\u2033]/g,'"').replace(/[\u2010-\u2015\u2212]/g,'-').replace(/\s+/g,' ').trim();
+// Discharge documents often state status as a heading ("New medications", "Stopped/held") above the item.
+export function sectionHeading(text:string,quote:string){
+ const at=text.indexOf(quote);if(at<0)return '';
+ return text.slice(0,at).split('\n').slice(0,-1).reverse().map(l=>l.trim()).find(l=>l && l.length<=40 && !/^(?:[•▪◦·*-]|\d+[.)])\s/.test(l) && !/[.]$/.test(l)) || '';
+}
+const quantities=(v:string)=>v.match(/\d+(?:[.,/]\d+)*(?:\s*(?:mcg|mg|kg|mL|lb|units|grams?|liters?|g|L|%)(?![a-zA-Z]))?/gi) || [];
+const quantityKey=(v:string)=>v.replace(/\s+/g,'').toLowerCase();
+// Definitions and teach-back questions are optional extras. An unsupported number there should not
+// force a full regeneration: drop the item and tell the clinician. Instruction sections stay strict.
+export function pruneOptionalItems(content:GeneratedContent){
+ let removed=0;
+ const supported=(text:string,quote:string)=>{const allowed=new Set(quantities(quote).map(quantityKey));return quantities(text).every(n=>allowed.has(quantityKey(n)));};
+ content.definitions=content.definitions.filter(d=>supported(d.meaning,d.evidence.quote) || (removed++,false));
+ content.teachBackQuestions=content.teachBackQuestions.filter(q=>supported(q.text,q.evidence.quote) || (removed++,false));
+ if(removed)content.issues.push({id:'optional-items-removed',severity:'warning',description:`${removed} AI-written definition or teach-back item(s) were removed because they contained numbers not found in the source.`,resolution:null});
+ return content;
+}
 export function validateClinical(content:GeneratedContent,sources:SourceProvenance[]) {
  const refs=new Map(sources.map(s=>[s.sourceId,s]));
  const warnings:GeneratedContent['issues']=[];
@@ -27,27 +47,30 @@ export function validateClinical(content:GeneratedContent,sources:SourceProvenan
  for(const key of ['hospitalCourse','diagnoses','dailyActions','diet','fluids','activity','otherInstructions','appointments','labsAndMonitoring','warningSigns','definitions','teachBackQuestions','practicalBarriers','medications'] as const)content[key].forEach((_,index)=>paths.push(`${key}.${index}`));
  for(const [i,item] of sections.entries()){
   const source=refs.get(item.evidence.sourceId),quote=item.evidence.quote;
-  if(!source || !source.text.includes(quote))throw new AppError(422,'Clinical evidence does not match the stored source.');
+  if(!source || !squash(source.text).includes(squash(quote)))throw new ClinicalValidationError(`Clinical evidence does not match the stored source (${paths[i]}).`,JSON.stringify({clinicalItem:i,field:paths[i],citedQuote:quote,correction:'Every evidence quote must be copied exactly from the source text, word for word.'}));
   if(source.kind==='AUDIO_TRANSCRIPT' && !source.transcriptConfirmed)throw new AppError(422,'Clinician must confirm the transcript before processing.');
   const text='text' in item?item.text:'meaning' in item?item.meaning:item.plainLanguage+' '+item.notes;
+  // The patient also sees a medication's structured fields; those are verified verbatim separately below.
+  const shown='plainLanguage' in item?[item.name,item.dose,item.route,item.frequency,item.duration,item.formulation,text].filter(Boolean).join(' '):text;
+  // Omissions matter in instructions; background sections may summarize. Invented quantities are rejected everywhere.
+  const instructional=!['summary','hospitalCourse','diagnoses','definitions','teachBackQuestions'].includes(paths[i].split('.')[0]);
   // Compare whole quantity tokens, never substring matches (4 must not match 40).
   // Normalize typography only; do not convert units, doses or written numbers.
-  const numbers=(v:string)=>v.match(/\d+(?:[.,/]\d+)*(?:\s*(?:mcg|mg|kg|mL|lb|units|grams?|liters?|g|L|%)(?![a-zA-Z]))?/gi) || [];
-  const canonicalQuantity=(v:string)=>v.replace(/\s+/g,'').toLowerCase();
+  const numbers=quantities,canonicalQuantity=quantityKey;
   const sourceNumbers=new Set(numbers(quote).map(canonicalQuantity));
-  const generatedNumbers=new Set(numbers(text).map(canonicalQuantity));
+  const generatedNumbers=new Set(numbers(shown).map(canonicalQuantity));
   for(const n of numbers(text))if(!sourceNumbers.has(canonicalQuantity(n)))throw new ClinicalValidationError(`Generated quantities, units or dates are unsupported by their source at clinical item ${i} (${paths[i]}).`,JSON.stringify({clinicalItem:i,field:paths[i],instruction:text,unsupportedQuantity:n,citedQuote:quote,correction:'Use only quantities present in this exact cited quote. Choose the correct exact source quote for the instruction, or remove unsupported content. Do not invent or convert quantities.'}));
-  for(const n of numbers(quote))if(!generatedNumbers.has(canonicalQuantity(n)))warnings.push({id:`quantity-${i}`,severity:'critical',description:'A cited source quantity or date is missing from the generated instruction.',resolution:null});
+  if(instructional)for(const n of numbers(quote))if(!generatedNumbers.has(canonicalQuantity(n)) && !warnings.some(w=>w.id===`quantity-${i}`))warnings.push({id:`quantity-${i}`,severity:'critical',description:`${paths[i]}: the source says "${n}" but the patient text leaves it out. Source: "${quote}"`,resolution:null});
   const negation=/\b(?:not|never|avoid|stop|hold|unless|if|provided|until|pending|without)\b/gi;
-  for(const token of quote.match(negation) || [])if(!new RegExp('\\b'+token+'\\b','i').test(text))warnings.push({id:`condition-${i}-${token.toLowerCase()}`,severity:'critical',description:'A negation or conditional qualifier from the source requires clinician reconciliation.',resolution:null});
+  if(instructional)for(const token of quote.match(negation) || [])if(!new RegExp('\\b'+token+'\\b','i').test(text))warnings.push({id:`condition-${i}-${token.toLowerCase()}`,severity:'critical',description:`${paths[i]}: the source says "${token}" but the patient text leaves it out. Source: "${quote}"`,resolution:null});
  }
  const actions=[...content.dailyActions,...content.diet,...content.fluids,...content.activity,...content.otherInstructions,...content.appointments,...content.labsAndMonitoring,...content.warningSigns,...content.teachBackQuestions,...content.practicalBarriers];
  for(const action of actions)if(['CHART_CONTEXT','EPIC_FHIR'].includes(refs.get(action.evidence.sourceId)!.kind))throw new AppError(422,'Chart context cannot establish finalized discharge actions.');
- for(const [i,warning] of content.warningSigns.entries()){const levels:Record<string,RegExp>={CONTACT_CARE_TEAM:/contact|call|notify|care team/i,URGENT:/urgent|immediately|promptly/i,EMERGENCY:/emergency|911/i};if(!levels[warning.level].test(warning.evidence.quote))warnings.push({id:`escalation-${i}`,severity:'critical',description:'Escalation level is not explicit in the cited source; clinician must verify the intended action.',resolution:null});}
+ for(const [i,warning] of content.warningSigns.entries()){const levels:Record<string,RegExp>={CONTACT_CARE_TEAM:/contact|call|notify|care team/i,URGENT:/urgent|immediately|promptly/i,EMERGENCY:/emergency|911/i};const heading=sectionHeading(refs.get(warning.evidence.sourceId)?.text || '',warning.evidence.quote);if(!levels[warning.level].test(warning.evidence.quote+'\n'+heading))warnings.push({id:`escalation-${i}`,severity:'critical',description:`warningSigns.${i}: marked ${warning.level}, but the source does not say so. Source: "${warning.evidence.quote}"${heading?` under "${heading}"`:''}`,resolution:null});}
  for(const [i,m] of content.medications.entries()){
   const source=refs.get(m.evidence.sourceId)!;
   if(['CHART_CONTEXT','EPIC_FHIR'].includes(source.kind))throw new AppError(422,'Chart medications alone cannot establish discharge medication reconciliation.');
-  for(const value of [m.name,m.dose,m.route,m.frequency,m.duration,m.formulation])if(value && !m.evidence.quote.toLowerCase().includes(value.toLowerCase()))throw new AppError(422,'Medication fields must appear verbatim in their cited source.');
+  for(const [field,value] of Object.entries({name:m.name,dose:m.dose,route:m.route,frequency:m.frequency,duration:m.duration,formulation:m.formulation}))if(value && !squash(m.evidence.quote).toLowerCase().includes(squash(value).toLowerCase()))throw new ClinicalValidationError(`Medication fields must appear verbatim in their cited source (${m.name} ${field}).`,JSON.stringify({medication:m.name,field,value,citedQuote:m.evidence.quote,correction:`Copy ${field} exactly as written in the cited quote, or use null if the quote does not state it. Do not infer it from elsewhere.`}));
   for(const form of m.evidence.quote.match(/\b(?:succinate|tartrate|ER|XR|XL|extended-release|delayed-release)\b/g) || [])if(!(m.name+' '+(m.formulation || '')).includes(form))warnings.push({id:`formulation-${i}`,severity:'critical',description:`${m.name}: preserve the source medication formulation.`,resolution:null});
   if(/\bfor\s+\d+\s+(?:days?|weeks?|months?)/i.test(m.evidence.quote) && !m.duration)warnings.push({id:`duration-${i}`,severity:'critical',description:`${m.name}: a source duration is missing from the medication field.`,resolution:null});
   const sourceLines=sources.filter(s=>!['CHART_CONTEXT','EPIC_FHIR'].includes(s.kind)).flatMap(s=>s.text.split(/\n/)).filter(line=>line.toLowerCase().includes(m.name.toLowerCase()));
@@ -55,8 +78,8 @@ export function validateClinical(content:GeneratedContent,sources:SourceProvenan
   const doses=new Set(sourceLines.flatMap(line=>line.match(/\d+(?:[./]\d+)?\s*(?:mg|mcg|mL|units)\b/gi) || []));
   if(directives.size>1 || doses.size>1)warnings.push({id:`source-conflict-${i}`,severity:'critical',description:`${m.name}: source lines contain different reconciliation directives or doses. Clinician must reconcile; no source may silently override another.`,resolution:null});
   const statusPattern:Record<string,RegExp>={NEW:/\bnew|start|initiat/i,CONTINUE:/\bcontinu/i,CHANGE:/\bchang|increas|decreas|replac/i,STOP:/\bstop|discontinu/i,HOLD:/\bhold|held|temporar/i};
-  if(!statusPattern[m.status].test(m.evidence.quote))warnings.push({id:`status-${i}`,severity:'critical',description:`${m.name}: reconciliation status lacks explicit source evidence.`,resolution:null});
-  if(!['STOP','HOLD'].includes(m.status) && (!m.dose || !m.route || !m.frequency))warnings.push({id:`medication-${i}`,severity:'critical',description:`${m.name}: missing dose, route or frequency. Do not guess.`,resolution:null});
+  if(!statusPattern[m.status].test(m.evidence.quote+'\n'+sectionHeading(source.text,m.evidence.quote)))warnings.push({id:`status-${i}`,severity:'critical',description:`${m.name}: reconciliation status lacks explicit source evidence.`,resolution:null});
+  if(!['STOP','HOLD'].includes(m.status) && (!m.dose || !m.route || !m.frequency))warnings.push({id:`medication-${i}`,severity:m.dose && m.frequency?'warning':'critical',description:`${m.name}: the source does not state the ${(['dose','route','frequency'] as const).filter(k=>!m[k]).join(', ')}. Do not guess; confirm with the prescriber.`,resolution:null});
  }
  return warnings;
 }

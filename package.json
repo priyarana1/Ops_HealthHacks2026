@@ -15,7 +15,8 @@
     "backend:demo": "node scripts/backend-flow.mjs",
     "backend:cleanup": "node scripts/backend-cleanup.mjs",
     "backend:indexes": "node scripts/backend-indexes.mjs",
-    "backend:seed": "node scripts/backend-seed.mjs"
+    "backend:seed": "node scripts/backend-seed.mjs",
+    "backend:upload": "node scripts/backend-upload.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.900.0",

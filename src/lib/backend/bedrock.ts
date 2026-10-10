@@ -2,7 +2,7 @@ import { ZodError } from 'zod';
 import { BedrockRuntimeClient,ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 import { AppError } from '@/lib/security/core';
 import { generatedContent,type GeneratedContent,type SourceProvenance } from './contracts';
-import { validateClinical,ClinicalValidationError } from './policy';
+import { validateClinical,pruneOptionalItems,ClinicalValidationError } from './policy';
 export interface ClinicalProcessor {process(sources:SourceProvenance[]):Promise<{content:GeneratedContent;model:{modelId:string;region:string;generatedAt:Date;requestId?:string}}>}
 export const clinicalProcessor:ClinicalProcessor={async process(sources){
  const modelId=process.env.BEDROCK_MODEL_ID,region=process.env.AWS_REGION;
@@ -21,6 +21,7 @@ export const clinicalProcessor:ClinicalProcessor={async process(sources){
    previousOutput=raw;
    const content=generatedContent.parse(JSON.parse(raw.replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,'')));
    for(const item of content.issues)item.resolution=null;
+   pruneOptionalItems(content);
    const checks=validateClinical(content,sources);content.issues=[...content.issues.filter(i=>!checks.some(c=>c.id===i.id)),...checks,{id:'source-completeness',severity:'critical',description:'Clinician must compare every source medication, numeric instruction, warning, appointment, test and condition against this draft; automated checks cannot prove completeness.',resolution:null}];
    return {content,model:{modelId,region,generatedAt:new Date(),requestId:response.$metadata?.requestId}};
   }catch(error){
