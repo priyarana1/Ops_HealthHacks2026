@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clearpath.example/schemas/plan.schema.json",
+  "title": "ClearPath patient plan",
+  "description": "Structured, plain-language discharge plan produced by the simplify step and approved by a clinician. Translations use the same shape.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["whyHere", "meds", "todos", "appointments", "callTeamIf", "er911If", "thresholds", "ambiguityFlags", "readingLevel"],
+  "properties": {
+    "whyHere": { "type": "string", "minLength": 1, "maxLength": 600 },
+    "meds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["new", "keep", "stop"],
+      "properties": {
+        "new":  { "type": "array", "items": { "$ref": "#/$defs/medActive" } },
+        "keep": { "type": "array", "items": { "$ref": "#/$defs/medActive" } },
+        "stop": { "type": "array", "items": { "$ref": "#/$defs/medStop" } }
+      }
+    },
+    "todos": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 300 } },
+    "appointments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["who", "when", "why"],
+        "properties": {
+          "who":  { "type": "string" },
+          "when": { "type": ["string", "null"], "description": "Copy the source wording (for example 'within about 1 week'). null means no date yet." },
+          "why":  { "type": "string" }
+        }
+      }
+    },
+    "callTeamIf": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 300 } },
+    "er911If":   { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 300 } },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["weightGainLb", "fluidLimit"],
+      "properties": {
+        "weightGainLb": { "type": ["number", "null"], "minimum": 1, "maximum": 20 },
+        "fluidLimit":   { "type": ["string", "null"] }
+      }
+    },
+    "ambiguityFlags": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "field", "issue", "resolved"],
+        "properties": {
+          "id":       { "type": "string" },
+          "field":    { "type": "string", "description": "Dot path, for example 'thresholds.weightGainLb'" },
+          "issue":    { "type": "string" },
+          "resolved": { "type": "boolean" },
+          "resolution": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "readingLevel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["grade", "target"],
+      "properties": {
+        "grade":  { "type": "number" },
+        "target": { "type": "number", "const": 5.0 }
+      }
+    },
+    "notes": { "type": "array", "items": { "type": "string" }, "description": "Translation step only: anything that could not be translated safely." }
+  },
+  "$defs": {
+    "medActive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "dose", "timing", "plainReason"],
+      "properties": {
+        "name":        { "type": "string", "description": "Exactly as in the source. Never translated." },
+        "dose":        { "type": ["string", "null"], "description": "Exactly as in the source, or null (and flag it) when missing." },
+        "timing":      { "type": ["string", "null"] },
+        "plainReason": { "type": "string" },
+        "doNotTakeWith": { "type": "string", "description": "Only when the source states a replacement or discontinuation." }
+      }
+    },
+    "medStop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "action", "plainReason"],
+      "properties": {
+        "name":        { "type": "string" },
+        "action":      { "type": "string", "enum": ["STOP", "HOLD"] },
+        "plainReason": { "type": "string" },
+        "replacedBy":  { "type": "string" }
+      }
+    }
+  }
+}
