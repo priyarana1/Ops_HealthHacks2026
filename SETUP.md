@@ -82,3 +82,17 @@ For a local synthetic test, sign in with the admin flags enabled, create a synth
 First fix package registry connectivity and run `npm install`. Then run `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, and the README's full flow. Static checks and the production build pass with installed dependencies. Epic OAuth and development sessions have synthetic-fixture tests independent of MongoDB/AWS; real authorization remains a local manual check because the execution sandbox denies HTTP listening and Epic DNS access. No live-success results are claimed.
 
 Add credential-backed smoke tests for each enabled Epic resource and real Atlas connection/indexes, AWS upload/job/output cleanup, Bedrock schema behavior and a browser test covering login → approval → invitation → correct patient plan → expiration. Confirm other patient/session IDs cannot access that plan. Review active-job cleanup, failed-job recovery, concurrent publish/activation behavior and source/AI content with synthetic edge cases before a demonstration.
+
+## Manual chart / AVS workflow without Epic or AWS
+
+Set `MONGODB_URI` and `MONGODB_DB_NAME` (exact spelling) in `.env.local`. In Atlas, use a database user with read/write access to this database and add your current public IP to the project IP access list. The database user is separate from your Atlas website login. Restart the development server after editing configuration.
+
+Run `npm run db:check` to perform a read-only ping. It prints no URI or password. A failed ping does not establish whether the cause is the local network, Atlas access list, or credentials. The new-discharge page also checks database connectivity using the provider-authenticated `/api/database/status` endpoint.
+
+1. Sign in at `http://localhost:3000/provider` and start a new discharge.
+2. Paste/upload a synthetic `.txt` chart (under 60 KB), and paste/upload finalized synthetic AVS text separately. PDF/Word extraction is not enabled. Chart context alone cannot be processed as finalized discharge instructions.
+3. Confirm synthetic data, then save. Reload the review page and verify the uploaded chart and AVS remain present. Return to the provider list and reopen the draft. Saving does not require AWS or Epic.
+4. To test the entire patient flow without AWS, start a **separate built-in synthetic demo** with `ENABLE_DEMO_MODE=true`. This uses its own canned source, not your uploaded chart. Select **Generate synthetic demo (no API call)**, review, approve, publish, and use the development-only invitation and OTP in a private browser window.
+5. To process your own uploaded text, configure AWS credentials through the standard SDK chain, `AWS_REGION`, and `BEDROCK_MODEL_ID`, then use **Generate with Bedrock**. S3 and Transcribe are needed only for audio, not text processing. Failed real requests never automatically become demo results.
+
+All saved drafts retain the initial 30-day expiration. Approval and patient publication remain separate actions. This local prototype is not a production deployment.

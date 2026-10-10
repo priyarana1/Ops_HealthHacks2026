@@ -86,3 +86,21 @@ npm run dev
 The execution sandbox blocked binding `127.0.0.1:3000` (`EPERM`) and could not resolve `fhir.epic.com`. Thus a real browser authorization/token exchange and live chart fetch have **not** been verified here. Complete steps 1–8 on your local machine to verify the registered app.
 
 Official references: [Epic OAuth, standalone launch, confidential clients, OpenID verification and sandbox test data](https://fhir.epic.com/Documentation), [Epic public R4 sandbox](https://fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4/).
+
+## Diagnosing “Invalid OAuth 2.0 request” before callback
+
+Sign in to ClearPath, open `/provider`, expand **Development OAuth diagnostics**, and click **Check authorization configuration**. This provider-authenticated, development-only check fetches real SMART discovery but does not initiate authorization or exchange a code. It exposes only allowlisted public configuration and redacted parameter values. Never share the full Epic redirect URL, tickets, state, authorization codes, secrets, or tokens.
+
+The request uses the discovered authorization endpoint, `response_type=code`, the exact configured callback, `openid` by default, the canonical Epic R4 audience, random server-bound state, and S256 PKCE. No launch scope or token is sent. Confidential client authentication occurs only at token exchange. Discovery requests explicitly request JSON; endpoints containing query strings are rejected so discovery cannot inject extra OAuth parameters.
+
+If Epic rejects the authorization request before returning a code, compare `EPIC_CLIENT_ID` privately against **Non-Production Client ID** in the Epic developer portal. Confirm the app is enabled for clinician/user-facing standalone authorization, the redirect is exactly `http://localhost:3000/api/epic/callback` (no trailing slash), and its confidential-client method matches `EPIC_TOKEN_AUTH_METHOD`. Use `EPIC_SCOPES=openid`; add `fhirUser` only when enabled. Verify the registered incoming FHIR APIs separately. Restart `npm run dev` after editing `.env.local`, and browse using `localhost`, not `127.0.0.1`.
+
+The HSWeb error alone cannot establish which portal setting Epic rejected. UUID syntax does not prove the configured ID is the non-production ID. A secret mismatch normally fails later at token exchange; changing it is not a demonstrated fix for this pre-callback failure. No successful live authorization has been established by the automated HTTP-fixture tests.
+
+## Token-exchange diagnostic (after successful clinician login and consent)
+
+Retry Connect once and inspect the **server terminal** for `[ClearPath Epic token exchange]`. The diagnostic includes Epic's actual HTTP status, an allowlisted OAuth error, the authentication method, and whether PKCE was included. `error_description: null` is retained as null; missing descriptions are marked. Fixed safe descriptions are preserved verbatim; all other descriptions are suppressed because upstream errors can echo credentials. No response body, Authorization header, callback URL, code, state, token, or verifier is logged. This diagnostic is never returned to the browser.
+
+The Basic request is POSTed to the discovered token endpoint as `application/x-www-form-urlencoded`. The Authorization header uses Base64 of the individually form-URL-encoded client ID and secret joined by a colon; neither client ID nor secret is duplicated in the body. The body carries `grant_type=authorization_code`, the callback code, the exact original redirect URI, and the original PKCE verifier. Transport regression tests inspect the resulting Fetch Request serialization.
+
+For persistent `invalid_client`, verify in the **same app listing**: (1) the configured ID is its Non-Production Client ID, (2) the app is a confidential clinician/staff app, (3) the credential is its active **Sandbox Client Secret**, not a secret for another app/customer/environment or a stored hash, (4) changes were saved and synchronized, and (5) the running Next.js process has been restarted with that value. A UUID or a local secret being present cannot verify this association. The JWK URL is not used by `client_secret_basic`. Epic advises re-uploading the client credential and allowing synchronization if invalid_client persists. Do not retry an already used callback/code; start a fresh Connect flow.

@@ -14,7 +14,7 @@ export function epicConfig() {
  if(method.startsWith('client_secret') && !process.env.EPIC_CLIENT_SECRET)throw new AppError(503,'EPIC_CLIENT_SECRET is required for the configured authentication method.');
  if(method==='private_key_jwt' && !(process.env.EPIC_PRIVATE_KEY_PEM || process.env.EPIC_PRIVATE_KEY_PATH))throw new AppError(503,'Configure EPIC_PRIVATE_KEY_PEM or EPIC_PRIVATE_KEY_PATH for private_key_jwt.');
  // Epic documents openid as sufficient for sandbox authorization; resource access also depends on registered APIs.
- const scope=process.env.EPIC_SCOPES?.trim() || 'openid';
+ const scope=(process.env.EPIC_SCOPES?.trim() || 'openid').split(/\s+/).join(' ');
  if(/(?:^|\s)(launch(?:\/\S+)?|offline_access|online_access)(?:\s|$)/.test(scope))throw new AppError(503,'Standalone clinician authorization must not request launch context or refresh-token scopes in this prototype.');
  return {base,clientId,redirect,scope,authMethod:method as ClientAuthMethod};
 }
@@ -24,7 +24,7 @@ export function trustedEndpoint(url:string) {
  return parsed.toString();
 }
 export async function epicJson(url:string,init:RequestInit={}) {
- let response:Response;try{response=await fetch(trustedEndpoint(url),{...init,cache:'no-store',redirect:'error',signal:AbortSignal.timeout(15000)});}catch{throw new AppError(502,'Cannot reach Epic Sandbox. Check network access and retry; no demo data was substituted.');}
+ let response:Response;try{response=await fetch(trustedEndpoint(url),{...init,headers:{Accept:'application/json',...Object.fromEntries(new Headers(init.headers).entries())},cache:'no-store',redirect:'error',signal:AbortSignal.timeout(15000)});}catch{throw new AppError(502,'Cannot reach Epic Sandbox. Check network access and retry; no demo data was substituted.');}
  return response;
 }
 const smartSchema=z.object({authorization_endpoint:z.string(),token_endpoint:z.string(),token_endpoint_auth_methods_supported:z.array(z.string()).optional(),code_challenge_methods_supported:z.array(z.string()).optional(),scopes_supported:z.array(z.string()).optional()});
@@ -32,6 +32,7 @@ export async function discovery() {
  const {base,authMethod}=epicConfig();const response=await epicJson(base+'/.well-known/smart-configuration');
  if(!response.ok)throw new AppError(502,'Epic SMART discovery failed. Authorization was not started.');
  const parsed=smartSchema.safeParse(await response.json().catch(()=>null));if(!parsed.success)throw new AppError(502,'Epic SMART discovery returned invalid metadata.');const d=parsed.data;
+ if(new URL(trustedEndpoint(d.authorization_endpoint)).search || new URL(trustedEndpoint(d.token_endpoint)).search)throw new AppError(502,'Untrusted Epic endpoint. Discovery endpoints must not include query parameters.');
  if(d.token_endpoint_auth_methods_supported && !d.token_endpoint_auth_methods_supported.includes(authMethod))throw new AppError(503,'Epic discovery does not support the configured client authentication method.');
  return {authorize:trustedEndpoint(d.authorization_endpoint),token:trustedEndpoint(d.token_endpoint),authMethods:d.token_endpoint_auth_methods_supported,pkce:d.code_challenge_methods_supported?d.code_challenge_methods_supported.includes('S256'):true};
 }

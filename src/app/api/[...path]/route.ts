@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { handler } from '@/lib/security/http';
 import { AppError, assertActive, assertPlanAccess, equal, expiration, hash, randomToken } from '@/lib/security/core';
+import { dischargeInput } from '@/lib/discharges/input';
 import { connectDB } from '@/lib/db/mongodb';
 import { Patient, DischargePlan, PatientAccess, AppSession, Artifact } from '@/lib/db/models';
 import { cookieSession, identity, issueSession, limit, revokeSession } from '@/lib/auth/session';
@@ -18,7 +19,7 @@ import { putAudio, s3 } from '@/lib/aws/s3';
 import { startJob, pollJob, cleanupArtifact } from '@/lib/aws/transcribe';
 import { purgeExpired } from '@/lib/expiration/cleanup';
 export const runtime = 'nodejs';
-const input = z.object({ displayName: z.string().min(1).max(100), clinicalInput: z.string().max(60000).default(''), syntheticConfirmed: z.literal(true), epicPatientId: z.string().optional(), encounterId: z.string().optional(), demo: z.boolean().default(false) }).strict();
+
 const credentials = z.object({ email: z.string().email(), password: z.string().min(1).max(200) }).strict();
 const invitation = z.object({ token: z.string().min(32).max(100) }).strict();
 const verification = z.object({ token: z.string().min(32).max(100), otp: z.string().regex(/^\d{6}$/) }).strict();
@@ -101,11 +102,16 @@ async function dispatch(req: NextRequest) {
     const user = await identity('provider'), owner = user.identity as string, sessionId = user.sessionHash as string;
     if (path === 'auth/me' && method === 'GET')
         return { role: 'provider', email: owner };
+    if(path==='database/status' && method==='GET'){
+        if(!process.env.MONGODB_URI)return {configured:false,connected:false,message:'Set MONGODB_URI and MONGODB_DB_NAME in .env.local, then restart the app.'};
+        try{const db=await connectDB();await db.connection.db!.admin().ping();return {configured:true,connected:true,message:'MongoDB connection verified. Synthetic discharge drafts can be saved.'};}
+        catch{return {configured:true,connected:false,message:'MongoDB connection failed. Check the database user, Atlas network access, connection string, and local network. Credentials are not displayed.'};}
+    }
     await connectDB();
     if (path === 'discharges' && method === 'GET')
         return { plans: await DischargePlan.find({ owner, expiresAt: { $gt: new Date() } }).select('planId patientId status createdAt expiresAt').sort({ createdAt: -1 }).limit(50).lean() };
     if (path === 'discharges' && method === 'POST') {
-        const data = input.parse(await json(req));
+        const data = dischargeInput.parse(await json(req));
         if (data.demo && process.env.ENABLE_DEMO_MODE !== 'true')
             throw new AppError(403, 'Synthetic demo mode is disabled.');
         const chart = data.epicPatientId ? await records(sessionId, fhirId(data.epicPatientId)) : undefined;
@@ -114,7 +120,7 @@ async function dispatch(req: NextRequest) {
         const createdAt = new Date(), expiresAt = expiration(createdAt), patientId = randomUUID(), planId = randomUUID();
         await Patient.create({ patientId, owner, source: chart ? 'epic_sandbox' : 'manual', epicFhirIssuer: chart?.issuer, epicFhirPatientId: chart?.patientId, epicEncounterId: data.encounterId, displayName: chart?.displayName || data.displayName, createdAt, expiresAt });
         try {
-            await DischargePlan.create({ planId, patientId, owner, epicEncounterId: data.encounterId, source: { chart, demo: data.demo, synthetic: true, finalizedAvsRetrieved: false, avsProvided: !!data.clinicalInput }, clinicalInput: data.demo ? demoSource : data.clinicalInput, createdAt, expiresAt });
+            await DischargePlan.create({ planId, patientId, owner, epicEncounterId: data.encounterId, source: { chart, uploadedChartText: data.uploadedChartText, uploadedChartKind: data.uploadedChartText ? 'manual-chart-context' : undefined, demo: data.demo, synthetic: true, finalizedAvsRetrieved: false, avsProvided: !!data.clinicalInput }, clinicalInput: data.demo ? demoSource : data.clinicalInput, createdAt, expiresAt });
         }
         catch (e) {
             await Patient.deleteOne({ patientId });

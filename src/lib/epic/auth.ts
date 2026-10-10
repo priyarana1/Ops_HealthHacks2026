@@ -6,18 +6,22 @@ import { discovery, epicConfig, epicJson } from './config';
 import { validateState } from './state';
 import { epicStore } from './store';
 import { tokenRequest } from './client-auth';
+import { reportTokenFailure } from './token-diagnostics';
 import { clinicianIdentity } from './identity';
 import { z } from 'zod';
 export { validateState } from './state';
-export async function authorize(sessionId:string) {
- const config=epicConfig(),d=await discovery(),state=randomToken(),verifier=randomToken();
- const nonce=config.scope.split(/\s+/).includes('openid')?randomToken():undefined;
- await epicStore.putAttempt({stateHash:hash(state),sessionId,verifier:d.pkce?verifier:undefined,nonce,tokenEndpoint:d.token,authMethods:d.authMethods,redirectUri:config.redirect,clientId:config.clientId,scope:config.scope,expiresAt:new Date(Date.now()+5*60*1000)});
+export function authorizationRequest(config:ReturnType<typeof epicConfig>,d:Awaited<ReturnType<typeof discovery>>,state:string,verifier:string,nonce?:string) {
  const url=new URL(d.authorize);const params={response_type:'code',client_id:config.clientId,redirect_uri:config.redirect,scope:config.scope,state,aud:config.base};
  for(const [key,value] of Object.entries(params))url.searchParams.set(key,value);
  if(nonce)url.searchParams.set('nonce',nonce);
  if(d.pkce){url.searchParams.set('code_challenge',createHash('sha256').update(verifier).digest('base64url'));url.searchParams.set('code_challenge_method','S256');}
  return url;
+}
+export async function authorize(sessionId:string) {
+ const config=epicConfig(),d=await discovery(),state=randomToken(),verifier=randomToken();
+ const nonce=config.scope.split(/\s+/).includes('openid')?randomToken():undefined;
+ await epicStore.putAttempt({stateHash:hash(state),sessionId,verifier:d.pkce?verifier:undefined,nonce,tokenEndpoint:d.token,authMethods:d.authMethods,redirectUri:config.redirect,clientId:config.clientId,scope:config.scope,expiresAt:new Date(Date.now()+5*60*1000)});
+ return authorizationRequest(config,d,state,verifier,nonce);
 }
 const tokenSchema=z.object({access_token:z.string().min(1),token_type:z.string().refine(v=>v.toLowerCase()==='bearer'),expires_in:z.coerce.number().positive().finite(),scope:z.string().optional(),id_token:z.string().optional()});
 export async function exchange(sessionId:string,state:string,code?:string,denied=false) {
@@ -28,7 +32,7 @@ export async function exchange(sessionId:string,state:string,code?:string,denied
  const c=epicConfig();if(attempt.clientId!==c.clientId || attempt.redirectUri!==c.redirect || attempt.scope!==c.scope)throw new AppError(409,'Epic configuration changed during authorization. Reconnect.');
  const request=await tokenRequest(code,attempt.redirectUri,attempt.tokenEndpoint,attempt.verifier);
  const response=await epicJson(attempt.tokenEndpoint,{method:'POST',...request});
- if(!response.ok){const result=await response.json().catch(()=>({}));const errors:Record<string,string>={invalid_client:'Epic rejected the confidential client. Check the non-production secret or registered public key and authentication method.',invalid_grant:'Epic rejected the code. It may be expired, reused, or bound to a different redirect URI.',invalid_scope:'Epic rejected the requested scopes. Check registered APIs and EPIC_SCOPES.',access_denied:'Epic denied access for this user.'};throw new AppError(502,errors[result.error] || 'Epic authorization-code exchange failed. Verify sandbox registration and retry.');}
+ if(!response.ok){const result:unknown=await response.json().catch(()=>null);const diagnostic=reportTokenFailure(response.status,result,c.authMethod,!!attempt.verifier);const errors:Record<string,string>={invalid_client:'Epic rejected the confidential client. Check the non-production secret or registered public key and authentication method.',invalid_grant:'Epic rejected the code. It may be expired, reused, or bound to a different redirect URI.',invalid_scope:'Epic rejected the requested scopes. Check registered APIs and EPIC_SCOPES.',access_denied:'Epic denied access for this user.'};throw new AppError(502,errors[diagnostic.oauthError] || 'Epic authorization-code exchange failed. Verify sandbox registration and retry.');}
  const parsed=tokenSchema.safeParse(await response.json().catch(()=>null));if(!parsed.success)throw new AppError(502,'Epic returned an invalid token response.');const token=parsed.data;
  const clinician=await clinicianIdentity(token.id_token,attempt.nonce),ttl=Math.min(token.expires_in,3600);
  const encryptedToken=await sealData({accessToken:token.access_token},{password:sessionSecret(),ttl});
