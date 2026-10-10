@@ -1,5 +1,5 @@
 import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
-import { planContent, validateEvidence, flagMissingMedicationDetails } from '@/lib/ai/schemas';
+import { planContent, validateEvidence, flagMissingMedicationDetails, flagSodiumAsSalt } from '@/lib/ai/schemas';
 import { systemPrompt, schemaDescription } from '@/lib/ai/prompts';
 import { AppError } from '@/lib/security/core';
 export async function processClinical(source: string) {
@@ -15,7 +15,7 @@ export async function processClinical(source: string) {
             }) => c.text || '').join('') || '';
             const parsed = planContent.parse(JSON.parse(text.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '')));
             validateEvidence(parsed, source);
-            return flagMissingMedicationDetails(parsed);
+            return flagSodiumAsSalt(flagMissingMedicationDetails(parsed), source);
         }
         catch {
             last = 'Previous output failed JSON, schema, or exact source-evidence validation. Correct it without guessing missing values.';

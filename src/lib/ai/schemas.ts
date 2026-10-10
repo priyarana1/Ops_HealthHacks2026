@@ -30,5 +30,14 @@ export function flagMissingMedicationDetails(plan: PlanContent) {
     }
     return plan;
 }
+// Sodium and salt are different quantities (2 g sodium is about 5 g salt); a swap changes the instruction.
+export function flagSodiumAsSalt(plan: PlanContent, source: string) {
+    if (!/\bsodium\b/i.test(source) || /\bsalt\b/i.test(source))
+        return plan;
+    const texts = [plan.reasonForHospitalization?.text, ...[...plan.diagnoses, ...plan.dailyInstructions, ...plan.appointments, ...plan.warningSigns, ...plan.emergencyInstructions].map(i => i.text), ...plan.medications.map(m => m.patientFriendlyExplanation)];
+    if (texts.some(t => t && /\bsalt\b/i.test(t)) && !plan.ambiguityFlags.some(f => f.id === 'sodium-written-as-salt'))
+        plan.ambiguityFlags.push({ id: 'sodium-written-as-salt', severity: 'high', description: 'The source says sodium, but the patient text says salt. These are different amounts. Reword to match the source.', resolution: null });
+    return plan;
+}
 export function approvalGate(plan: PlanContent) { if (plan.ambiguityFlags.some(f => f.severity === 'high' && !f.resolution?.trim()))
     throw new AppError(422, 'Resolve all high-risk ambiguities before approval.'); }
