@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "db:check": "node scripts/check-mongodb.mjs",
+    "eval:ai": "node scripts/eval-ai.mjs",
     "backend:install": "npm install @aws-sdk/client-sesv2@^3.900.0 mammoth@^1.9.0 pdf-parse@^2.4.5",
     "backend:demo": "node scripts/backend-flow.mjs",
     "backend:cleanup": "node scripts/backend-cleanup.mjs",
