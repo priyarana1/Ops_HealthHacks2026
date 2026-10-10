@@ -15,9 +15,9 @@ function DashboardInner() {
   const toast = useToast();
 
   return (
-    <ProviderShell active="dash" crumb="Discharges">
+    <ProviderShell active="dash" crumb="Heart-failure discharges">
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
-        <h1>Discharges</h1>
+        <h1>Heart-failure discharges</h1>
         <span style={{ flex: 1 }} />
         <Button onClick={() => router.push("/provider/discharge/ELN-7Q2K")}>
           <Plus size={18} aria-hidden="true" />

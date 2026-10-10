@@ -39,8 +39,12 @@ export type MedGroup = z.infer<typeof medGroupSchema>;
 export const medicationSchema = z.object({
   name: z.string(),
   dose: z.string().optional(),
+  /** Tablets per dose, explicitly supplied by pharmacy or demo data; never inferred from mg. */
+  tabletCount: z.number().positive().optional(),
   frequency: z.string().optional(),
   purpose: z.string().optional(),
+  /** Patient-readable route, only when present in the source prescription. */
+  route: z.string().optional(),
   note: z.string().optional(),
   /** Safety callout rendered inline, e.g. "Do not take both. Losartan replaces lisinopril." */
   warning: z.string().optional(),
@@ -59,6 +63,8 @@ export const appointmentSchema = z.object({
   specialty: z.string().optional(),
   when: z.string().optional(),
   location: z.string().optional(),
+  phone: z.string().optional(),
+  website: z.string().url().optional(),
   prep: z.string().optional(),
   /** true => "Scheduling needed" (no date invented). */
   scheduleNeeded: z.boolean().default(false),

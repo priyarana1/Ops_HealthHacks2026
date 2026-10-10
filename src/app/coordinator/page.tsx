@@ -173,7 +173,7 @@ function CoordinatorInner() {
         <div className="cp-content">
           {view === "esc" ? (
             <>
-              <div className="cp-page-heading"><div><span className="cp-eyebrow">CARE COORDINATION</span><h1>Who needs attention</h1><p className="muted">A clear view of your patients. Start with those who need you most.</p></div><Chip tone="sage"><Check size={14} aria-hidden="true" />{ESCALATIONS.length} patients monitored</Chip></div>
+              <div className="cp-page-heading"><div><span className="cp-eyebrow">HEART CARE COORDINATION</span><h1>Who needs attention</h1><p className="muted">A clear view of your patients. Start with those who need you most.</p></div><Chip tone="sage"><Check size={14} aria-hidden="true" />{ESCALATIONS.length} patients monitored</Chip></div>
               <div className="cp-stats" aria-label="Summary">
                 <span className="cp-stat" style={{ background: "var(--red-bg)", color: "var(--red-fg)" }}>
                   <Siren size={16} aria-hidden="true" />
@@ -466,7 +466,7 @@ const RECOMMENDED: Record<Escalation["kind"], string> = {
   swell: "Call patient to review the weight plan.",
   nocheck: "Call to check in and remind the patient about the daily check-in.",
   mh: "Call the patient today and offer follow-up support.",
-  appt: "Help the patient schedule the urology visit.",
+  appt: "Help the patient schedule the cardiology visit.",
 };
 
 /** Inline SVG weight trend (ported from CoordinatorApp.html). */

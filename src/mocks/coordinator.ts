@@ -22,11 +22,11 @@ export interface Escalation {
 
 export const ESCALATIONS: Escalation[] = [
   { id: 1, name: "Eleanor Okafor", dx: "Heart failure (reduced EF)", zone: "yellow", trigger: "Weight up 4 lb", flag: "", last: "Today 7:58 AM", kind: "weight" },
-  { id: 2, name: "Walter Brennan", dx: "Kidney stone, ureteral stent", zone: "red", trigger: "Reported chest pain", flag: "", last: "Today 8:10 AM", kind: "chest" },
+  { id: 2, name: "Walter Brennan", dx: "Heart failure (reduced EF)", zone: "red", trigger: "Reported chest pain", flag: "", last: "Today 8:10 AM", kind: "chest" },
   { id: 3, name: "Rosa Delgado", dx: "Heart failure (preserved EF), AFib", zone: "yellow", trigger: "More swelling", flag: "", last: "Yesterday", kind: "swell" },
-  { id: 4, name: "Mei Chen", dx: "Sepsis / UTI", zone: "gray", trigger: "No check-in", flag: "No check-in for 2 days", last: "2 days ago", kind: "nocheck" },
-  { id: 5, name: "Harold Pike", dx: "COPD", zone: "", trigger: "", flag: "Mental-health flag: said \u201CI feel alone\u201D (988 shown)", last: "Today 9:05 AM", kind: "mh" },
-  { id: 6, name: "Grace Lin", dx: "Kidney stone, ureteral stent", zone: "", trigger: "", flag: "No appointment date set (urology / stent)", last: "\u2014", kind: "appt" },
+  { id: 4, name: "Mei Chen", dx: "Heart failure with kidney injury", zone: "gray", trigger: "No check-in", flag: "No check-in for 2 days", last: "2 days ago", kind: "nocheck" },
+  { id: 5, name: "Harold Pike", dx: "COPD with heart failure", zone: "", trigger: "", flag: "Mental-health flag: said \u201CI feel alone\u201D (988 shown)", last: "Today 9:05 AM", kind: "mh" },
+  { id: 6, name: "Grace Lin", dx: "Heart failure (reduced EF)", zone: "", trigger: "", flag: "No cardiology appointment date set", last: "\u2014", kind: "appt" },
 ];
 
 /** 7-day weight trend for Eleanor's drawer chart (lb). */

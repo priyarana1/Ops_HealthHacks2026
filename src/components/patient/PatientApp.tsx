@@ -1,41 +1,43 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { Brand } from "@/components/ui/Brand";
 import { clsx } from "@/lib/clsx";
 import {
   Home,
   Pill,
   ListChecks,
-  LifeBuoy,
   MessageCircle,
-  Volume2,
-  Globe,
   Lock,
   AlertTriangle,
   Phone,
   Calendar,
-  Heart,
-  Share2,
   Check,
-  Plus,
-  Minus,
   Ban,
-  RefreshCw,
   ChevronRight,
   Clock,
   Send,
-  Siren,
   ShieldCheck,
+  Sunrise,
+  Sun,
+  Sunset,
+  Moon,
+  UserRound,
+  Utensils,
+  GlassWater,
+  MapPin,
+  ExternalLink,
+  CircleHelp,
 } from "lucide-react";
 import { ELEANOR_PLAN_CONTENT } from "@/mocks/plan";
-import { DEMO_OTP } from "@/mocks/patient";
+import { DEMO_OTP, ELEANOR } from "@/mocks/patient";
 import { UI } from "@/lib/i18n";
 import { LANGUAGE_LABELS, LANGUAGE_DIR } from "@/types/plan";
 import type { Language } from "@/types/plan";
 
 const PHONE = "(732) 555-0100";
-type Screen = "otp" | "home" | "meds" | "todo" | "help" | "chat" | "checkin" | "expired";
+type Screen = "otp" | "home" | "meds" | "todo" | "chat" | "checkin" | "expired" | "profile" | "articles";
 
 export function PatientApp({ expired = false }: { expired?: boolean }) {
   const [lang, setLang] = useState<Language>("en");
@@ -45,7 +47,15 @@ export function PatientApp({ expired = false }: { expired?: boolean }) {
   const [sos, setSos] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const deviceRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("cp_patient_language");
+      if (saved && Object.prototype.hasOwnProperty.call(LANGUAGE_LABELS, saved)) setLang(saved as Language);
+    } catch { /* Language selection still works when browser storage is unavailable. */ }
+  }, []);
 
   const t = UI[lang];
   const dir = LANGUAGE_DIR[lang];
@@ -90,8 +100,13 @@ export function PatientApp({ expired = false }: { expired?: boolean }) {
 
   function changeLang(l: Language) {
     setLang(l);
+    try { localStorage.setItem("cp_patient_language", l); } catch { /* Keep the selection for this visit. */ }
     showToast(`${LANGUAGE_LABELS[l]}`);
   }
+
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [screen]);
 
   const bare = screen === "otp" || screen === "expired";
 
@@ -113,11 +128,12 @@ export function PatientApp({ expired = false }: { expired?: boolean }) {
         </div>
 
         <div className="pt-top">
-          <div className="pt-portal-brand"><Brand size={28} /><span>Patient recovery portal</span></div>
-          <span className="pt-who">{bare ? "" : "Eleanor"}</span>
+          <div className="pt-portal-brand"><Brand size={28} /><span>Heart care recovery portal</span></div>
+          {!bare && <span className="pt-who">Eleanor</span>}
         </div>
 
         <main
+          ref={mainRef}
           className={clsx(
             "pt-main",
             lang === "zh" && "lang-zh",
@@ -133,20 +149,18 @@ export function PatientApp({ expired = false }: { expired?: boolean }) {
             <HomeScreen
               t={t}
               lang={lang}
-              setLang={changeLang}
               daysLeft={daysLeft}
               go={setScreen}
-              done={done}
-              setDone={setDone}
             />
           )}
           {screen === "meds" && (
-            <MedsScreen t={t} lang={lang} setLang={changeLang} />
+            <MedsScreen t={t} lang={lang} />
           )}
-          {screen === "todo" && <TodoScreen call={call} done={done} setDone={setDone} />}
-          {screen === "help" && <HelpScreen call={call} setSos={setSos} />}
-          {screen === "chat" && <ChatScreen setSos={setSos} call={call} />}
-          {screen === "checkin" && <CheckinScreen setSos={setSos} call={call} />}
+          {screen === "todo" && <TodoScreen lang={lang} go={setScreen} call={call} done={done} setDone={setDone} />}
+          {screen === "articles" && <ArticlesScreen lang={lang} go={setScreen} />}
+          {screen === "profile" && <ProfileScreen lang={lang} changeLang={changeLang} />}
+          {screen === "chat" && <ChatScreen lang={lang} setSos={setSos} call={call} />}
+          {screen === "checkin" && <CheckinScreen onClose={() => setScreen("todo")} />}
           {screen === "expired" && (
             <ExpiredScreen call={call} onRestart={() => setScreen("otp")} />
           )}
@@ -157,10 +171,10 @@ export function PatientApp({ expired = false }: { expired?: boolean }) {
             {(
               [
                 ["home", t.tabHome, Home],
-                ["meds", t.tabMeds, Pill],
                 ["todo", t.tabTodo, ListChecks],
-                ["help", t.tabHelp, LifeBuoy],
-                ["chat", t.tabChat, MessageCircle],
+                ["chat", CHAT_HELP_LABEL[lang], MessageCircle],
+                ["meds", t.tabMeds, Pill],
+                ["profile", PROFILE_COPY[lang].title, UserRound],
               ] as Array<[Screen, string, typeof Home]>
             ).map(([key, label, Icon]) => (
               <button
@@ -321,49 +335,17 @@ function OtpScreen({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
-/* ---------- Language bar ---------- */
-function LangBar({
-  lang,
-  setLang,
-}: {
-  lang: Language;
-  setLang: (l: Language) => void;
-}) {
-  return (
-    <div className="pt-langbar" role="group" aria-label="Language">
-      {(Object.keys(LANGUAGE_LABELS) as Language[]).map((k) => (
-        <button
-          key={k}
-          type="button"
-          className={clsx("pt-pill", lang === k && "pt-pill--on")}
-          aria-pressed={lang === k}
-          onClick={() => setLang(k)}
-        >
-          <Globe size={22} aria-hidden="true" />
-          <span lang={k}>{LANGUAGE_LABELS[k]}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 /* ---------- Home ---------- */
 function HomeScreen({
   t,
   lang,
-  setLang,
   daysLeft,
   go,
-  done,
-  setDone,
 }: {
   t: (typeof UI)[Language];
   lang: Language;
-  setLang: (l: Language) => void;
   daysLeft: number;
   go: (s: Screen) => void;
-  done: Record<string, boolean>;
-  setDone: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
 }) {
   const content = ELEANOR_PLAN_CONTENT[lang];
   const C = 2 * Math.PI * 38;
@@ -376,21 +358,6 @@ function HomeScreen({
     <section>
       <h1>{t.hello}</h1>
       <p className="lead">{t.sub}</p>
-      <div className="pt-daily-plan">
-        <div className="pt-plan-heading"><h2>{t.todoNav}</h2><span className="muted tn">{content.todos.filter((item) => done[item.id]).length} / {content.todos.length}</span></div>
-        <progress className="pt-plan-progress" aria-label={t.todoNav} value={content.todos.filter((item) => done[item.id]).length} max={content.todos.length} />
-        {content.todos.map((item) => <button key={item.id} className="pt-todo" type="button" aria-pressed={!!done[item.id]} onClick={() => setDone((prev) => ({ ...prev, [item.id]: !prev[item.id] }))}><span className="box"><Check size={22} aria-hidden="true" /></span><span className="t">{item.label}</span></button>)}
-        <button className="pt-btn pt-btn--ghost" type="button" onClick={() => go("checkin")}><Heart size={22} aria-hidden="true" />{t.checkin}<ChevronRight size={20} aria-hidden="true" /></button>
-      </div>
-      <button className="pt-buddy" type="button" onClick={() => go("chat")}><span className="pt-buddy-icon"><MessageCircle size={26} aria-hidden="true" /></span><span><b>{t.tabChat}</b><small>{lang === "en" ? "Review information from your discharge plan." : t.sub}</small></span><ChevronRight size={22} aria-hidden="true" /></button>
-      <button className="pt-btn pt-btn--big" type="button">
-        <Volume2 size={30} aria-hidden="true" />
-        <span>{t.play}</span>
-      </button>
-      <p className="fine center" style={{ marginTop: 8, textAlign: "center" }}>
-        {t.playSub}
-      </p>
-      <LangBar lang={lang} setLang={setLang} />
       <div className="pt-card pt-card--sage pt-count">
         <div
           className="pt-ring"
@@ -422,150 +389,276 @@ function HomeScreen({
         <h2>{content.whyTitle}</h2>
         <p style={{ margin: 0 }}>{content.why}</p>
       </div>
-      <button className="pt-linkcard" type="button" onClick={() => go("todo")}>
-        <ListChecks size={30} aria-hidden="true" />
-        <span>
-          <b>{t.todoNav}</b>
-          <small>{t.todoNavSub}</small>
-        </span>
-        <span className="go">
-          <ChevronRight size={24} aria-hidden="true" />
-        </span>
-      </button>
-      <button
-        className="pt-linkcard"
-        type="button"
-        onClick={() => go("help")}
-        style={{ border: "2px solid var(--amber)" }}
-      >
-        <LifeBuoy size={30} aria-hidden="true" />
-        <span>
-          <b>{t.helpNav}</b>
-          <small>{t.helpNavSub}</small>
-        </span>
-        <span className="go">
-          <ChevronRight size={24} aria-hidden="true" />
-        </span>
-      </button>
-      <h2 style={{ marginTop: 24 }}>{t.more}</h2>
-      <button className="pt-linkcard" type="button" onClick={() => go("checkin")}>
-        <Heart size={28} aria-hidden="true" />
-        <span>
-          <b>{t.checkin}</b>
-        </span>
-        <span className="go">
-          <ChevronRight size={24} aria-hidden="true" />
-        </span>
-      </button>
-      <button className="pt-linkcard" type="button">
-        <Share2 size={28} aria-hidden="true" />
-        <span>
-          <b>{t.share}</b>
-        </span>
-        <span className="go">
-          <ChevronRight size={24} aria-hidden="true" />
-        </span>
-      </button>
+      <div className="pt-home-actions">
+        <button className="pt-linkcard" type="button" onClick={() => go("todo")}><ListChecks size={28} aria-hidden="true" /><span><b>{ARTICLE_COPY[lang].todo}</b></span><ChevronRight size={24} className="go" aria-hidden="true" /></button>
+        <button className="pt-linkcard" type="button" onClick={() => go("checkin")}><ListChecks size={28} aria-hidden="true" /><span><b>{{ en: "Bring me to my questionnaire", es: "Ir a mi cuestionario", zh: "查看我的问卷", ar: "انتقل إلى استبياني" }[lang]}</b></span><ChevronRight size={24} className="go" aria-hidden="true" /></button>
+      </div>
+      <RecommendedTips lang={lang} />
     </section>
   );
 }
 
-/* ---------- Meds ---------- */
-function MedsScreen({
-  t,
-  lang,
-  setLang,
-}: {
+const ARTICLE_COPY = {
+  en: { todo: "Bring me to my to-do list", open: "Bring me to recommended articles", title: "Recommended articles", intro: "Learn more about caring for your heart.", external: "Opens the source website · Articles are in English", back: "Back to Home", titles: ["Understanding heart failure", "Keeping track of symptoms", "Understanding your medicines"] },
+  es: { todo: "Ir a mi lista de tareas", open: "Ver artículos recomendados", title: "Artículos recomendados", intro: "Aprenda más sobre el cuidado de su corazón.", external: "Abre el sitio original · Artículos en inglés", back: "Volver al inicio", titles: ["Entender la insuficiencia cardíaca", "Registrar los síntomas", "Entender sus medicamentos"] },
+  zh: { todo: "查看待办事项", open: "查看推荐文章", title: "推荐文章", intro: "了解更多心脏护理知识。", external: "打开原网站——文章为英文", back: "返回首页", titles: ["了解心力衰竭", "记录症状", "了解您的药物"] },
+  ar: { todo: "انتقل إلى قائمة مهامي", open: "عرض المقالات الموصى بها", title: "مقالات موصى بها", intro: "تعرّف على رعاية قلبك.", external: "يفتح موقع المصدر — المقالات باللغة الإنجليزية", back: "العودة للرئيسية", titles: ["فهم قصور القلب", "تتبع الأعراض", "فهم أدويتك"] },
+};
+const TIP_COPY = {
+  en: { title: "Recommended tips", intro: "For your heart-failure recovery.", diet: "Low-salt eating", meals: "Low-sodium meals", foods: "Foods to limit and simple swaps", activity: "Physical activity with heart failure", note: "Follow your care team’s food and activity plan. Ask before starting new exercise." },
+  es: { title: "Consejos recomendados", intro: "Para su recuperación de la insuficiencia cardíaca.", diet: "Comer con menos sal", meals: "Comidas bajas en sodio", foods: "Alimentos que limitar y alternativas", activity: "Actividad física con insuficiencia cardíaca", note: "Siga el plan de alimentación y actividad de su equipo. Consulte antes de comenzar un ejercicio nuevo." },
+  zh: { title: "推荐建议", intro: "帮助您的心力衰竭康复。", diet: "低盐饮食", meals: "低钠食谱", foods: "需要限制的食物和替代选择", activity: "心力衰竭患者的身体活动", note: "遵循护理团队的饮食和活动计划。开始新的运动前，请先咨询。" },
+  ar: { title: "نصائح موصى بها", intro: "للتعافي مع قصور القلب.", diet: "طعام قليل الملح", meals: "وجبات قليلة الصوديوم", foods: "أطعمة للحد منها وبدائل بسيطة", activity: "النشاط البدني مع قصور القلب", note: "اتبع خطة الغذاء والنشاط من فريق الرعاية. اسأل قبل بدء تمرين جديد." },
+};
+const HEART_FAILURE_TIPS = [
+  { key: "meals" as const, topic: "salt", title: "Sodium-Smart Recipes", cover: "/article-covers/sodium-smart-recipes.png", source: "American Heart Association", url: "https://www.heart.org/-/media/Files/Health-Topics/Brochures/Sodium-Smart-Recipes.pdf" },
+  { key: "foods" as const, topic: "salt", title: "The Salty Six", cover: "/article-covers/salty-six.jpg", source: "American Heart Association", url: "https://www.heart.org/-/media/aha/h4gm/pdf-files/salty-six-adults-english-infographic.pdf" },
+  { key: "activity" as const, topic: "activity", title: "Living Well with Heart Failure", cover: "/article-covers/living-with-heart-failure.png", source: "Veterans Affairs · Veterans Health Library", url: "https://www.veteranshealthlibrary.va.gov/LivingWith/HeartFailure/" },
+];
+const READ_GUIDE = { en: "Read guide", es: "Leer guía", zh: "阅读指南", ar: "اقرأ الدليل" };
+function RecommendedTips({ lang, showHeading = true }: { lang: Language; showHeading?: boolean }) {
+  const copy = TIP_COPY[lang];
+  const hasHeartFailure = /heart failure|hfref|hfpef/i.test(ELEANOR.primaryDiagnosis);
+  const hasLowSaltPlan = ELEANOR_PLAN_CONTENT[lang].todos.some((item) => item.id === "salt");
+  const tips = hasHeartFailure ? HEART_FAILURE_TIPS.filter((tip) => tip.topic !== "salt" || hasLowSaltPlan) : [];
+  if (!tips.length) return null;
+  return <section className="pt-recommended-tips pt-reading-library" aria-label={copy.title}>
+    {showHeading && <><h2>{copy.title}</h2><p className="muted">{copy.intro}</p></>}
+    <div className="pt-bookshelf">
+      {tips.map((tip) => <a className="pt-book-card" key={tip.key} href={tip.url} target="_blank" rel="noopener noreferrer">
+        <div className={clsx("pt-book-cover", `pt-book-cover--${tip.key}`)}><Image src={tip.cover} alt="" width={400} height={540} sizes="(max-width: 480px) 180px, 200px" className="pt-real-cover" /><span className="pt-book-pages" aria-hidden="true" /></div>
+        <span className="pt-book-topic">{copy[tip.key]}</span><h3>{tip.title}</h3><p className="pt-book-publisher">{tip.source}</p>
+        <span className="pt-book-read">{READ_GUIDE[lang]}<ChevronRight size={20} aria-hidden="true" /></span>
+      </a>)}
+    </div>
+    <p className="pt-tip-note">{copy.note}</p><p className="fine">{ARTICLE_COPY[lang].external}</p>
+  </section>;
+}
+function ArticlesScreen({ lang, go }: { lang: Language; go: (screen: Screen) => void }) {
+  const copy = ARTICLE_COPY[lang];
+  return <section aria-labelledby="articles-title"><h1 id="articles-title">{copy.title}</h1><p className="lead">{copy.intro}</p><RecommendedTips lang={lang} showHeading={false} /><button className="pt-btn pt-btn--ghost" type="button" onClick={() => go("home")} style={{ marginTop: 24 }}>{copy.back}</button></section>;
+}
+
+function pillCountLabel(count: number, lang: Language) {
+  return { en: `${count} ${count === 1 ? "pill" : "pills"}`, es: `${count} ${count === 1 ? "pastilla" : "pastillas"}`, zh: `${count} 片`, ar: `${count} حبة` }[lang];
+}
+
+/* ---------- Meds: illustrative daily schedule ---------- */
+const MED_TIMELINE_COPY = {
+  en: { intro: "Your medicines, at a glance.", sample: "Sample times — confirm your schedule with your care team.", morning: "Morning", midday: "Midday", evening: "Evening", night: "Night", daily: "Daily view", details: "More details", none: "No medicines shown at this sample time.", stop: "Do not take these", sampleTime: "Sample time", nightTime: "At night", new: "New", keep: "Continue", doses: "medicines", bedtime: "Bedtime" },
+  es: { intro: "Sus medicinas, de un vistazo.", sample: "Horas de ejemplo — confirme su horario con su equipo de atención.", morning: "Mañana", midday: "Mediodía", evening: "Tarde", night: "Noche", daily: "Vista diaria", details: "Más detalles", none: "No se muestran medicinas a esta hora de ejemplo.", stop: "No tome estas", sampleTime: "Hora de ejemplo", nightTime: "Por la noche", new: "Nueva", keep: "Continuar", doses: "medicinas", bedtime: "Al acostarse" },
+  zh: { intro: "一目了然的用药安排。", sample: "示例时间——请与护理团队确认您的用药时间。", morning: "早晨", midday: "中午", evening: "傍晚", night: "夜间", daily: "每日安排", details: "更多详情", none: "此示例时间没有显示药物。", stop: "不要服用这些药物", sampleTime: "示例时间", nightTime: "夜间服用", new: "新药", keep: "继续", doses: "种药物", bedtime: "睡前" },
+  ar: { intro: "أدويتك في لمحة.", sample: "أوقات توضيحية — أكد جدولك مع فريق الرعاية.", morning: "الصباح", midday: "الظهر", evening: "المساء", night: "الليل", daily: "الجدول اليومي", details: "مزيد من التفاصيل", none: "لا توجد أدوية معروضة في هذا الوقت التوضيحي.", stop: "لا تتناول هذه", sampleTime: "وقت توضيحي", nightTime: "ليلاً", new: "جديد", keep: "استمرار", doses: "أدوية", bedtime: "وقت النوم" },
+};
+
+const MED_CARD_COPY = {
+  en: { dose: "Take", purpose: "What it’s for", route: "How to take it", label: "Use the pharmacy label for the number of tablets or liquid amount. If it differs from this plan, ask your pharmacist or care team." },
+  es: { dose: "Tome", purpose: "Para qué sirve", route: "Cómo tomarla", label: "Use la etiqueta de la farmacia para el número de tabletas o la cantidad de líquido. Si difiere de este plan, consulte a su farmacéutico o equipo de atención." },
+  zh: { dose: "剂量", purpose: "用途", route: "服用方式", label: "药片数量或液体用量以药房标签为准。如果与此计划不同，请咨询药剂师或护理团队。" },
+  ar: { dose: "الجرعة", purpose: "الغرض", route: "طريقة التناول", label: "راجع ملصق الصيدلية لعدد الأقراص أو كمية السائل. إذا اختلف عن هذه الخطة، اسأل الصيدلي أو فريق الرعاية." },
+};
+
+type MedPeriod = "morning" | "midday" | "evening" | "night";
+// Clock times are presentation examples, never clinician-approved instructions.
+// The source specifies frequencies and atorvastatin at night, not exact hours.
+const SAMPLE_MED_PERIODS: Record<string, MedPeriod[]> = {
+  Furosemide: ["morning"],
+  Losartan: ["morning"],
+  Empagliflozin: ["morning"],
+  "Amoxicillin-clavulanate": ["morning", "evening"],
+  "Metoprolol succinate": ["morning"],
+  Apixaban: ["morning", "evening"],
+  Atorvastatin: ["night"],
+  Metformin: ["morning", "evening"],
+};
+
+function MedsScreen({ t, lang }: {
   t: (typeof UI)[Language];
   lang: Language;
-  setLang: (l: Language) => void;
 }) {
+  const [period, setPeriod] = useState<MedPeriod>("morning");
+  const [helpMedicine, setHelpMedicine] = useState<string | null>(null);
+  const helpDialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = helpDialogRef.current;
+    if (helpMedicine && dialog) {
+      dialog.closest("main")?.scrollTo({ top: 0, behavior: "instant" });
+      if (!dialog.open) dialog.showModal();
+      dialog.querySelector<HTMLElement>("h2")?.focus({ preventScroll: true });
+      dialog.scrollTo({ top: 0, behavior: "instant" });
+    }
+  }, [helpMedicine]);
   const content = ELEANOR_PLAN_CONTENT[lang];
-  const groups: Array<{
-    key: "new" | "keep" | "stop";
-    verb: string;
-    label: string;
-    Icon: typeof Plus;
-  }> = [
-    { key: "new", verb: t.verbNew, label: t.groupNew, Icon: Plus },
-    { key: "keep", verb: t.verbKeep, label: t.groupKeep, Icon: RefreshCw },
-    { key: "stop", verb: t.verbStop, label: t.groupStop, Icon: Ban },
+  const copy = MED_TIMELINE_COPY[lang];
+  const cardCopy = MED_CARD_COPY[lang];
+  const meds = [...content.medications.new.map((m) => ({ ...m, group: "new" as const })), ...content.medications.keep.map((m) => ({ ...m, group: "keep" as const }))];
+  const slots = [
+    { key: "morning" as const, time: "8 AM", Icon: Sunrise },
+    { key: "midday" as const, time: "12 PM", Icon: Sun },
+    { key: "evening" as const, time: "8 PM", Icon: Sunset },
+    { key: "night" as const, time: copy.nightTime, Icon: Moon },
   ];
+  const selectedMeds = meds.filter((m) => SAMPLE_MED_PERIODS[m.name]?.includes(period));
+  const helpMed = meds.find((m) => m.name === helpMedicine);
+  const safetyNoteNames = ["Apixaban", "Metformin"];
+  const medicationWarnings = meds.flatMap((m) => {
+    const messages = [m.warning, safetyNoteNames.includes(m.name) ? m.note : undefined].filter((message): message is string => !!message);
+    return messages.map((message) => ({ name: m.name, message }));
+  });
+  const helpCopy = {
+    en: { button: "Medicine help", when: "When to take it", instructions: "What to do", close: "Close" },
+    es: { button: "Ayuda con la medicina", when: "Cuándo tomarla", instructions: "Qué hacer", close: "Cerrar" },
+    zh: { button: "用药帮助", when: "何时服用", instructions: "该怎么做", close: "关闭" },
+    ar: { button: "مساعدة الدواء", when: "متى تتناوله", instructions: "ما يجب فعله", close: "إغلاق" },
+  }[lang];
+  const slot = slots.find((s) => s.key === period)!;
   return (
-    <section>
-      <h1>{t.medsTitle}</h1>
-      <p className="lead">{t.medsIntro}</p>
-      <LangBar lang={lang} setLang={setLang} />
-      {groups.map(({ key, verb, label, Icon }) => (
-        <section
-          key={key}
-          className={`pt-block pt-block--${key}`}
-          aria-label={label}
-        >
-          <div className="pt-block-h">
-            <Icon size={28} aria-hidden="true" />
-            <span className="verb">{verb}</span>
-            <button className="pt-listen" type="button" aria-label={`${t.listen}: ${label}`}>
-              <Volume2 size={22} aria-hidden="true" />
-              {t.listen}
-            </button>
-            <span style={{ fontSize: 18, fontWeight: 700, flex: "1 1 100%" }}>
-              {label}
-            </span>
-          </div>
-          {content.medications[key].map((m) => (
-            <div className="pt-med" key={m.name}>
-              <div className="pt-med-name">
-                <bdi dir="ltr">{m.name}</bdi>
-                {m.dose ? (
-                  <>
-                    {" "}
-                    <bdi dir="ltr" className="dose">
-                      {m.dose}
-                    </bdi>
-                  </>
-                ) : null}
-              </div>
-              {m.frequency && <div className="pt-med-time">{m.frequency}</div>}
-              {m.note && <div className="pt-med-note">{m.note}</div>}
-              {m.warning && (
-                <div className="pt-warn" role="note">
-                  <AlertTriangle size={26} aria-hidden="true" />
-                  <span>{m.warning}</span>
-                </div>
-              )}
-            </div>
-          ))}
-        </section>
-      ))}
+    <section className="pt-medicine-timeline" aria-labelledby="med-title">
+      <h1 id="med-title">{t.medsTitle}</h1>
+      <p className="pt-demo-pill-note">{{ en: "Demo pill counts · Confirm with your pharmacy label.", es: "Cantidad de pastillas de ejemplo · Confirme con la etiqueta de la farmacia.", zh: "示例药片数量 · 请核对药房标签。", ar: "عدد حبات توضيحي · تحقق من ملصق الصيدلية." }[lang]}</p>
+      <div className="pt-day-timeline pt-pill-case" role="group" aria-label={copy.daily}>
+        {slots.map(({ key, time, Icon }) => {
+          const count = meds.filter((m) => SAMPLE_MED_PERIODS[m.name]?.includes(key)).length;
+          return <button key={key} type="button" aria-pressed={period === key} onClick={() => setPeriod(key)} className={clsx("pt-time-slot", `pt-pill-compartment--${key}`, period === key && "pt-time-slot--active")}>
+            <span className="pt-pill-lid"><span className="pt-time-icon"><Icon size={28} aria-hidden="true" /></span><b>{copy[key]}</b><span className="pt-time-hour" dir="ltr">{time}</span></span>
+            <span className="pt-pill-well"><Pill size={28} aria-hidden="true" /><span className="pt-time-count">{count} {copy.doses}</span></span>
+            <span className="pt-pill-tab" aria-hidden="true">{period === key ? <Check size={20} /> : <ChevronRight size={20} />}</span>
+          </button>;
+        })}
+      </div>
+      <div className={clsx("pt-simple-meds", `pt-simple-meds--${period}`)}>
+      <div className="pt-dose-heading"><span className="pt-period-icon"><slot.Icon size={28} aria-hidden="true" /></span><div><h2>{copy[period]}</h2><span className="pt-period-time" dir="ltr">{slot.time}</span></div></div>
+      <div className="pt-dose-list">
+        {selectedMeds.length === 0 && <p className="pt-no-doses">{copy.none}</p>}
+        {selectedMeds.map((m) => <article className="pt-dose-card" key={m.name}>
+          <div className="pt-dose-main"><Pill size={22} aria-hidden="true" /><div><h3><bdi dir="ltr">{m.name}</bdi></h3><p className="pt-dose-frequency">{m.frequency}</p></div><div className="pt-dose-value"><span>{cardCopy.dose}</span><bdi className="pt-dose-amount">{m.tabletCount ? pillCountLabel(m.tabletCount, lang) : cardCopy.label}</bdi></div></div>
+          <button className="pt-medicine-help" type="button" aria-label={`${helpCopy.button}: ${m.name}`} aria-haspopup="dialog" onClick={() => setHelpMedicine(m.name)}><CircleHelp size={28} aria-hidden="true" /><span>{helpCopy.button}</span></button>
+          {m.note && !["Furosemide", "Losartan", "Empagliflozin", ...safetyNoteNames].includes(m.name) && <p className="pt-dose-important">{m.note}</p>}
+        </article>)}
+      </div>
+      </div>
+      <dialog ref={helpDialogRef} className="pt-medicine-dialog" aria-labelledby="medicine-help-title" onCancel={() => setHelpMedicine(null)} onClose={() => setHelpMedicine(null)}>
+        {helpMed && <>
+          <h2 id="medicine-help-title" tabIndex={-1}><bdi dir="ltr">{helpMed.name}</bdi></h2>
+          <dl className="pt-medicine-help-facts">
+            <div><dt>{cardCopy.dose}</dt><dd>{helpMed.tabletCount ? pillCountLabel(helpMed.tabletCount, lang) : cardCopy.label}</dd></div>
+            <div><dt>{helpCopy.when}</dt><dd>{helpMed.frequency}</dd><dd>{(SAMPLE_MED_PERIODS[helpMed.name] || []).map((key) => { const time = slots.find((item) => item.key === key)!; return `${copy[key]} · ${time.time}`; }).join(" / ")}</dd></div>
+            {helpMed.purpose && <div><dt>{cardCopy.purpose}</dt><dd>{helpMed.purpose}</dd></div>}
+            {helpMed.route && <div><dt>{cardCopy.route}</dt><dd>{helpMed.route}</dd></div>}
+          </dl>
+          {helpMed.note && !safetyNoteNames.includes(helpMed.name) && <div className="pt-medicine-help-instructions"><h3>{helpCopy.instructions}</h3><p>{helpMed.note}</p></div>}
+          <p className="pt-med-label-note">{cardCopy.label}</p>
+          <button className="pt-btn" type="button" onClick={() => helpDialogRef.current?.close()}>{helpCopy.close}</button>
+        </>}
+      </dialog>
+      <p className="pt-med-label-note">{cardCopy.label}</p>
+      <section className="pt-stopped-meds" aria-labelledby="stopped-title">
+        <h2 id="stopped-title"><Ban size={22} aria-hidden="true" />{copy.stop}</h2>
+        {content.medications.stop.map((m) => <div className="pt-stopped-row" key={m.name}><h3><bdi dir="ltr">{m.name}</bdi></h3><p>{m.note}</p></div>)}
+      </section>
+      <section className="pt-medication-warnings" aria-labelledby="medication-warnings-title">
+        <h2 id="medication-warnings-title">{{ en: "Medication safety", es: "Seguridad de los medicamentos", zh: "用药安全", ar: "سلامة الأدوية" }[lang]}</h2>
+        <ul>{medicationWarnings.map(({ name, message }) => <li key={`${name}:${message}`}><h3><bdi dir="ltr">{name}</bdi></h3><p>{message}</p></li>)}</ul>
+      </section>
     </section>
   );
+}
+
+const CHECKLIST_COPY = {
+  en: { title: "Today’s priorities", reminders: "Keep in mind all day", morning: "Take morning medicines", evening: "Take evening medicines", night: "Take night medicine", schedule: "Sample timing — confirm with your care team.", review: "See medicines and doses" },
+  es: { title: "Prioridades de hoy", reminders: "Recuerde durante el día", morning: "Tome las medicinas de la mañana", evening: "Tome las medicinas de la tarde", night: "Tome la medicina de la noche", schedule: "Horario de ejemplo — confirme con su equipo de atención.", review: "Ver medicinas y dosis" },
+  zh: { title: "今天的重要事项", reminders: "全天注意", morning: "服用早晨药物", evening: "服用傍晚药物", night: "服用夜间药物", schedule: "示例时间——请与护理团队确认。", review: "查看药物和剂量" },
+  ar: { title: "أولويات اليوم", reminders: "تذكّر طوال اليوم", morning: "تناول أدوية الصباح", evening: "تناول أدوية المساء", night: "تناول دواء الليل", schedule: "أوقات توضيحية — أكدها مع فريق الرعاية.", review: "عرض الأدوية والجرعات" },
+};
+
+function DailyChecklist({ lang, done, setDone, onCheckin }: { onCheckin: () => void; lang: Language; done: Record<string, boolean>; setDone: React.Dispatch<React.SetStateAction<Record<string, boolean>>> }) {
+  const content = ELEANOR_PLAN_CONTENT[lang];
+  const copy = CHECKLIST_COPY[lang];
+  const activeMeds = [...content.medications.new, ...content.medications.keep];
+  const tasks = content.todos.filter((item) => !["salt", "fluids", "meds", "checkin"].includes(item.id));
+  const medicationTasks = (["morning", "evening", "night"] as const).map((period) => ({ id: `meds-${period}`, label: ({ en: "Took ALL medications", es: "Tomé TODOS los medicamentos", zh: "已服用所有药物", ar: "تناولت جميع الأدوية" })[lang], period }));
+  const priorities = [...tasks, ...medicationTasks];
+  const doseKey = (period: MedPeriod, name: string) => `dose:${period}:${name}`;
+  const periodMeds = (period: MedPeriod) => activeMeds.filter((m) => SAMPLE_MED_PERIODS[m.name]?.includes(period));
+  const isComplete = (id: string, state: Record<string, boolean>) => {
+    const medicationTask = medicationTasks.find((item) => item.id === id);
+    if (!medicationTask) return !!state[id];
+    const medicines = periodMeds(medicationTask.period);
+    return medicines.length > 0 && medicines.every((m) => state[doseKey(medicationTask.period, m.name)]);
+  };
+  function toggleTask(id: string) {
+    setDone((prev) => {
+      const medicationTask = medicationTasks.find((item) => item.id === id);
+      if (!medicationTask) return { ...prev, [id]: !prev[id] };
+      const next = { ...prev };
+      const checked = !isComplete(id, prev);
+      periodMeds(medicationTask.period).forEach((m) => { next[doseKey(medicationTask.period, m.name)] = checked; });
+      return next;
+    });
+  }
+  const completed = priorities.filter((item) => isComplete(item.id, done)).length;
+  return <>
+    <div className="pt-daily-plan">
+      <div className="pt-plan-heading"><h2>{copy.title}</h2><span className="muted tn">{completed} / {priorities.length}</span></div>
+      <progress className="pt-plan-progress" aria-label={copy.title} value={completed} max={priorities.length} />
+      <p className="pt-checklist-timing">{copy.schedule}</p>
+      {medicationTasks.map((medTask) => {
+        const Icon = medTask.period === "morning" ? Sunrise : medTask.period === "evening" ? Sunset : Moon;
+        const periodTasks = medTask.period === "morning" ? [...tasks, medTask] : [medTask];
+        return <section className={clsx("pt-priority-period", `pt-priority-period--${medTask.period}`)} key={medTask.period}>
+          <div className="pt-period-heading"><span className="pt-period-icon"><Icon size={28} aria-hidden="true" /></span><div><h3>{MED_TIMELINE_COPY[lang][medTask.period]}</h3><span className="pt-period-time">{medTask.period === "morning" ? "8 AM" : medTask.period === "evening" ? "8 PM" : MED_TIMELINE_COPY[lang].nightTime}</span></div><span className="pt-period-progress" aria-label={`${copy.title}: ${periodTasks.filter((item) => isComplete(item.id, done)).length} / ${periodTasks.length}`}>{periodTasks.every((item) => isComplete(item.id, done)) && <Check size={18} aria-hidden="true" />}{periodTasks.filter((item) => isComplete(item.id, done)).length} / {periodTasks.length}</span></div>
+          {periodTasks.map((item) => <div className="pt-priority-task" key={item.id}>
+            <button className="pt-todo" type="button" aria-pressed={isComplete(item.id, done)} onClick={() => toggleTask(item.id)}><span className="box"><Check size={22} aria-hidden="true" /></span><span className="t">{item.id === "weigh" ? PROFILE_COPY[lang].weigh : item.label}</span></button>
+            {item.id === medTask.id && <details className="pt-task-medicines"><summary>{copy.review} <span className="pt-med-taken-count">{periodMeds(medTask.period).filter((m) => done[doseKey(medTask.period, m.name)]).length}/{periodMeds(medTask.period).length}</span></summary><ul className="pt-individual-doses">{periodMeds(medTask.period).map((m) => {
+              const key = doseKey(medTask.period, m.name);
+              return <li key={m.name}><label className={clsx("pt-dose-checkbox", done[key] && "pt-dose-checkbox--taken")}><input type="checkbox" checked={!!done[key]} onChange={(event) => { const checked = event.target.checked; setDone((prev) => ({ ...prev, [key]: checked })); }} /><span><bdi dir="ltr">{m.name} <b>{m.tabletCount ? pillCountLabel(m.tabletCount, lang) : m.dose}</b></bdi></span></label></li>;
+            })}</ul></details>}
+          </div>)}
+        </section>;
+      })}
+    </div>
+    <section className="pt-daily-plan pt-daily-reminders"><div className="pt-plan-heading"><h2>{copy.reminders}</h2></div><ul>{content.todos.filter((item) => ["salt", "fluids"].includes(item.id)).map((item) => <li key={item.id}><span className={clsx("pt-reminder-icon", `pt-reminder-icon--${item.id}`)}>{item.id === "salt" ? <Utensils size={26} aria-hidden="true" /> : <GlassWater size={26} aria-hidden="true" />}</span><span>{item.label}</span></li>)}</ul><button className="pt-btn pt-btn--ghost" type="button" onClick={onCheckin}>{content.todos.find((item) => item.id === "checkin")?.label || UI[lang].checkin}<ChevronRight size={20} aria-hidden="true" /></button></section>
+  </>;
+}
+
+const PROFILE_COPY = {
+  en: { title: "Profile", info: "Your information", age: "Age", years: "years", condition: "Heart failure", language: "Language", full: "Your full discharge plan", intro: "Your care instructions in simple words.", daily: "Each day", visits: "Your follow-up", urgent: "Get urgent help · Call 911 for an emergency", team: "Call your heart care team", avoid: "Do not take ibuprofen or other NSAIDs unless your treating clinician approves them.", weigh: "Weigh yourself", hold: "Ask your care team before restarting a medicine on hold." },
+  es: { title: "Perfil", info: "Su información", age: "Edad", years: "años", condition: "Insuficiencia cardíaca", language: "Idioma", full: "Su plan completo de alta", intro: "Sus instrucciones en palabras sencillas.", daily: "Cada día", visits: "Su seguimiento", urgent: "Busque ayuda urgente · Llame al 911 en una emergencia", team: "Llame a su equipo de atención cardíaca", avoid: "No tome ibuprofeno ni otros AINE sin la aprobación de su médico tratante.", weigh: "Pésese", hold: "Consulte a su equipo antes de volver a tomar un medicamento suspendido." },
+  zh: { title: "个人资料", info: "您的信息", age: "年龄", years: "岁", condition: "心力衰竭", language: "语言", full: "完整出院计划", intro: "用简单语言解释的护理指导。", daily: "每天", visits: "复诊", urgent: "寻求紧急帮助——紧急情况下拨打911", team: "联系心脏护理团队", avoid: "未经主治医生批准，请勿服用布洛芬或其他非甾体抗炎药。", weigh: "称体重", hold: "恢复服用暂停的药物前，请咨询护理团队。" },
+  ar: { title: "الملف", info: "معلوماتك", age: "العمر", years: "سنة", condition: "قصور القلب", language: "اللغة", full: "خطة الخروج الكاملة", intro: "تعليمات الرعاية بكلمات بسيطة.", daily: "كل يوم", visits: "المتابعة", urgent: "اطلب مساعدة عاجلة — اتصل بـ 911 في الطوارئ", team: "اتصل بفريق رعاية القلب", avoid: "لا تتناول إيبوبروفين أو مضادات الالتهاب غير الستيرويدية الأخرى إلا بموافقة الطبيب المعالج.", weigh: "زن نفسك", hold: "اسأل فريق الرعاية قبل استئناف دواء تم إيقافه مؤقتاً." },
+};
+
+function ProfileScreen({ lang, changeLang }: { lang: Language; changeLang: (lang: Language) => void }) {
+  const copy = PROFILE_COPY[lang];
+  const content = ELEANOR_PLAN_CONTENT[lang];
+  const t = UI[lang];
+  return <section aria-labelledby="profile-title">
+    <h1 id="profile-title">{copy.title}</h1>
+    <section className="pt-card pt-profile-info"><UserRound size={28} aria-hidden="true" /><div><h2>{ELEANOR.name}</h2><p>{copy.age}: {ELEANOR.age} {copy.years}</p><p>{copy.condition}</p></div></section>
+    <section className="pt-card"><h2>{copy.language}</h2><label className="pt-language-setting"><span className="sr-only">{copy.language}</span><select value={lang} onChange={(event) => changeLang(event.target.value as Language)} aria-label={copy.language}>{(Object.keys(LANGUAGE_LABELS) as Language[]).map((key) => <option key={key} value={key} lang={key}>{LANGUAGE_LABELS[key]}</option>)}</select></label></section>
+    <details className="pt-profile-discharge" open>
+      <summary>{copy.full}</summary><p className="muted">{copy.intro}</p>
+      <section><h2>{content.whyTitle}</h2><p>{content.why}</p></section>
+      {(["new", "keep", "stop"] as const).map((group) => <section key={group}><h2>{group === "new" ? t.groupNew : group === "keep" ? t.groupKeep : t.groupStop}</h2>{content.medications[group].map((m) => <article className="pt-profile-med" key={m.name}><h3><bdi dir="ltr">{m.name}{m.tabletCount && ` — ${pillCountLabel(m.tabletCount, lang)}`}</bdi></h3>{m.frequency && <p>{m.frequency}{m.route && ` · ${m.route}`}</p>}{m.purpose && <p>{m.purpose}</p>}{m.note && <p>{m.note}</p>}{m.warning && m.warning !== m.note && <p className="pt-profile-warning">{m.warning}</p>}</article>)}{group === "stop" && <><p>{copy.hold}</p><p>{copy.avoid}</p></>}</section>)}
+      <section><h2>{copy.daily}</h2><ul>{content.todos.map((item) => <li key={item.id}>{item.label}</li>)}</ul></section>
+      <section><h2>{copy.visits}</h2><ul>{content.appointments.map((visit) => <li key={visit.type}><b>{visit.type}</b><br />{visit.when}</li>)}</ul></section>
+      {content.warnings.map((zone) => <section key={zone.severity} className={zone.severity === "red" ? "pt-profile-urgent" : ""}><h2>{zone.severity === "red" ? copy.urgent : copy.team}</h2><ul>{zone.items.map((item) => <li key={item}>{item}</li>)}</ul></section>)}
+    </details>
+  </section>;
 }
 
 /* ---------- To-do + appointments ---------- */
-function TodoScreen({ call, done, setDone }: { call: (who: string) => void; done: Record<string, boolean>; setDone: React.Dispatch<React.SetStateAction<Record<string, boolean>>> }) {
-  const content = ELEANOR_PLAN_CONTENT.en;
+function TodoScreen({ lang, go, call, done, setDone }: { go: (screen: Screen) => void; lang: Language; call: (who: string) => void; done: Record<string, boolean>; setDone: React.Dispatch<React.SetStateAction<Record<string, boolean>>> }) {
+  const content = ELEANOR_PLAN_CONTENT[lang];
   return (
     <section aria-labelledby="h-todo">
-      <h1 id="h-todo">Today&apos;s to-do</h1>
+      <h1 id="h-todo">{CHECKLIST_COPY[lang].title}</h1>
       <p className="lead">Tap each one when it is done.</p>
-      {content.todos.map((item) => (
-        <button
-          key={item.id}
-          className="pt-todo"
-          type="button"
-          aria-pressed={!!done[item.id]}
-          onClick={() => setDone((d) => ({ ...d, [item.id]: !d[item.id] }))}
-        >
-          <span className="box">
-            <Check size={22} aria-hidden="true" />
-          </span>
-          <span className="t">{item.label}</span>
-        </button>
-      ))}
+      <DailyChecklist lang={lang} done={done} setDone={setDone} onCheckin={() => go("checkin")} />
 
       <h2 style={{ marginTop: 28 }}>Your appointments</h2>
-      {content.appointments.map((a) => (
+      <p className="muted">{{ en: "Demo appointments, addresses, and phone numbers. Links open official RWJBarnabas Health information.", es: "Citas de ejemplo para esta demostración.", zh: "本演示中的预约为示例。", ar: "مواعيد توضيحية لهذا العرض." }[lang]}</p>
+      {content.appointments.slice(0, 2).map((a) => (
         <div className="pt-card" key={a.type}>
           <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
             <Calendar size={30} aria-hidden="true" />
@@ -574,6 +667,7 @@ function TodoScreen({ call, done, setDone }: { call: (who: string) => void; done
               <p className="lead" style={{ margin: 0 }}>
                 {a.when}
               </p>
+              {!a.scheduleNeeded && <p style={{ margin: "12px 0 0" }}><span className="cp-chip cp-chip--sage"><Check size={18} aria-hidden="true" />{{ en: "Scheduled", es: "Programada", zh: "已预约", ar: "تم تحديد الموعد" }[lang]}</span></p>}
               {a.scheduleNeeded && (
                 <p style={{ margin: "8px 0 12px" }}>
                   <span className="cp-chip cp-chip--amber">
@@ -583,6 +677,11 @@ function TodoScreen({ call, done, setDone }: { call: (who: string) => void; done
                 </p>
               )}
             </div>
+          </div>
+          <div className="pt-appointment-contact">
+            {a.location && <p><MapPin size={22} aria-hidden="true" /><span>{a.location}</span></p>}
+            {a.phone && <button className="pt-appointment-phone" type="button" onClick={() => call(a.phone!)}><Phone size={22} aria-hidden="true" /><span>{a.phone}</span></button>}
+            {a.website && <a href={a.website} target="_blank" rel="noopener noreferrer">{{ en: "View clinic information", es: "Ver información de la clínica", zh: "查看诊所信息", ar: "عرض معلومات العيادة" }[lang]}<ExternalLink size={20} aria-hidden="true" /></a>}
           </div>
           {a.scheduleNeeded && (
             <button
@@ -600,81 +699,26 @@ function TodoScreen({ call, done, setDone }: { call: (who: string) => void; done
 }
 
 /* ---------- Help ---------- */
-function HelpScreen({
-  call,
-  setSos,
-}: {
-  call: (who: string) => void;
-  setSos: (b: boolean) => void;
-}) {
-  const content = ELEANOR_PLAN_CONTENT.en;
-  const yellow = content.warnings.find((w) => w.severity === "yellow");
-  const red = content.warnings.find((w) => w.severity === "red");
-  return (
-    <section aria-labelledby="h-help">
-      <h1 id="h-help">Get help</h1>
-      <p className="lead">Review the symptoms below to find the appropriate level of care.</p>
-      <div className="pt-zone pt-zone--yellow">
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <Phone size={34} aria-hidden="true" />
-          <span className="cp-chip cp-chip--amber" style={{ border: "2px solid var(--amber)" }}>
-            Call your care team
-          </span>
-        </div>
-        <h2 style={{ marginTop: 12 }}>Call your care team if you have:</h2>
-        <ul>
-          {yellow?.items.map((it) => (
-            <li key={it}>{it}</li>
-          ))}
-        </ul>
-        <button
-          className="pt-btn pt-btn--amber"
-          type="button"
-          onClick={() => call("Care team")}
-          style={{ borderWidth: 3 }}
-        >
-          <Phone size={24} aria-hidden="true" />
-          Call care team {PHONE}
-        </button>
-      </div>
-      <div className="pt-zone pt-zone--red">
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <Siren size={34} aria-hidden="true" />
-          <span className="cp-chip cp-chip--red" style={{ border: "2px solid var(--red)" }}>
-            Emergency — call 911
-          </span>
-        </div>
-        <h2 style={{ marginTop: 12 }}>Go to the ER or call 911 if you have:</h2>
-        <ul>
-          {red?.items.map((it) => (
-            <li key={it}>{it}</li>
-          ))}
-        </ul>
-        <button
-          className="pt-btn pt-btn--red"
-          type="button"
-          onClick={() => call("911")}
-          style={{ minHeight: 72, fontSize: 24 }}
-        >
-          <Phone size={28} aria-hidden="true" />
-          Call 911
-        </button>
-      </div>
-
-      {/* keep setSos referenced for parity with chat/check-in escalation */}
-      <button
-        type="button"
-        className="pt-btn pt-btn--ghost pt-btn--sm"
-        onClick={() => setSos(true)}
-        style={{ marginTop: 4 }}
-      >
-        Show emergency screen
-      </button>
-    </section>
-  );
+const CALL_HELP_COPY = {
+  en: { title: "Need help?", team: "Call your care team", emergency: "Emergency · Call 911" },
+  es: { title: "¿Necesita ayuda?", team: "Llame a su equipo de atención", emergency: "Emergencia · Llame al 911" },
+  zh: { title: "需要帮助？", team: "联系护理团队", emergency: "紧急情况——拨打911" },
+  ar: { title: "تحتاج مساعدة؟", team: "اتصل بفريق الرعاية", emergency: "طوارئ — اتصل بـ 911" },
+};
+function HelpScreen({ call, lang }: { call: (who: string) => void; lang: Language }) {
+  const copy = CALL_HELP_COPY[lang];
+  return <section className="pt-call-shortcuts" aria-labelledby="h-help">
+    <h2 id="h-help">{copy.title}</h2>
+    <div className="pt-call-actions">
+      <button type="button" className="pt-call-action pt-call-action--team" onClick={() => call("Care team")}><Phone size={26} aria-hidden="true" /><span><b>{copy.team}</b><small dir="ltr">{PHONE}</small></span><ChevronRight size={22} aria-hidden="true" /></button>
+      <button type="button" className="pt-call-action pt-call-action--emergency" onClick={() => call("911")}><Phone size={26} aria-hidden="true" /><span><b>{copy.emergency}</b></span><ChevronRight size={22} aria-hidden="true" /></button>
+    </div>
+  </section>;
 }
 
 /* ---------- Chat (plan-grounded + triage) ---------- */
+const CHAT_HELP_LABEL = { en: "Chat & Help", es: "Chat y ayuda", zh: "聊天与帮助", ar: "الدردشة والمساعدة" };
+
 type Bubble = { who: "bot" | "me" | "care"; html: string };
 const CHIPS = [
   "When do I take apixaban?",
@@ -686,9 +730,11 @@ const CHIPS = [
 ];
 
 function ChatScreen({
+  lang,
   setSos,
   call,
 }: {
+  lang: Language;
   setSos: (b: boolean) => void;
   call: (who: string) => void;
 }) {
@@ -699,10 +745,10 @@ function ChatScreen({
     },
   ]);
   const [input, setInput] = useState("");
-  const endRef = useRef<HTMLDivElement | null>(null);
+  const chatRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (msgs.length > 1 && chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
   }, [msgs]);
 
   function ask(qRaw: string) {
@@ -756,9 +802,10 @@ function ChatScreen({
 
   return (
     <section aria-labelledby="h-chat">
-      <h1 id="h-chat">Ask about your plan</h1>
-      <p className="fine">Answers are based on your approved discharge plan.</p><div className="pt-message-notice"><Clock size={18} aria-hidden="true" /><span>For urgent concerns, call your care team. For an emergency, call 911.</span></div>
-      <div className="pt-chat" aria-live="polite">
+      <h1 id="h-chat">{CHAT_HELP_LABEL[lang]}</h1>
+      <HelpScreen lang={lang} call={call} />
+      <p className="fine">Answers are based on your approved discharge plan.</p>
+      <div className="pt-chat" ref={chatRef} aria-live="polite">
         {msgs.map((b, i) => (
           <div
             key={i}
@@ -776,7 +823,6 @@ function ChatScreen({
             Call 988
           </button>
         )}
-        <div ref={endRef} />
       </div>
       <div className="pt-chips">
         {CHIPS.map((c) => (
@@ -805,149 +851,151 @@ function ChatScreen({
 }
 
 /* ---------- Check-in ---------- */
-function CheckinScreen({
-  setSos,
-  call,
-}: {
-  setSos: (b: boolean) => void;
-  call: (who: string) => void;
-}) {
-  const BASE = 182;
-  const [wt, setWt] = useState(BASE);
-  const [sym, setSym] = useState<Set<string>>(new Set(["fine"]));
-  const [result, setResult] = useState<"green" | "yellow" | "red" | null>(null);
+const CHECKIN_SYMPTOMS = [
+  "Pain or discomfort",
+  "Breathing problems",
+  "Feeling dizzy or weak",
+  "Swelling",
+  "Weight changes",
+  "Heart or heartbeat problems",
+  "Stomach or bathroom problems",
+  "Feeling tired or unwell",
+  "Anxiety, stress, or mood changes",
+  "Other symptoms",
+];
 
-  function toggle(v: string) {
-    setSym((s) => {
-      const next = new Set(s);
-      if (v === "fine") return new Set(next.has("fine") ? [] : ["fine"]);
-      next.delete("fine");
-      if (next.has(v)) next.delete(v);
-      else next.add(v);
-      return next;
-    });
-  }
+type SymptomAdvice = { now: string; doctor?: string; urgent?: string; emergency: string };
+const SYMPTOM_ADVICE: Record<string, SymptomAdvice> = {
+  "Pain or discomfort": { now: "Take pain medicine only if prescribed in your discharge plan. Take it exactly as directed and rest the area.", doctor: "If pain is not controlled or keeps getting worse.", emergency: "For chest pain, sudden severe pain, or pain with fainting or trouble breathing." },
+  "Breathing problems": { now: "If you are having trouble breathing now, get medical attention right away. Call 911.", emergency: "For trouble breathing now. Do not wait to finish this check-in." },
+  "Feeling dizzy or weak": { now: "Sit or lie down right away. Stand up slowly.", doctor: "If it keeps happening.", emergency: "If you faint or have chest pain, confusion, trouble speaking, or weakness on one side." },
+  "Swelling": { now: "For swelling in an arm or leg, raise it above heart level while resting, if comfortable.", doctor: "If swelling increases or the area is red, warm, or painful.", emergency: "For swelling with trouble breathing, or swelling of the face, lips, or throat." },
+  "Weight changes": { now: "Record your weight and follow the weight instructions in your discharge plan.", doctor: "For a sudden change, or a change beyond the limit your care team gave you.", emergency: "If you also have chest pain, fainting, or trouble breathing." },
+  "Heart or heartbeat problems": { now: "If your heart is racing, sit down, rest, and take slow breaths.", doctor: "If it keeps happening.", emergency: "If a racing heart comes with chest pain, trouble breathing, or fainting, or does not settle in a few minutes." },
+  "Stomach or bathroom problems": { now: "Eat bland foods if you can. If sipping fluids, stay within your care team’s daily fluid limit.", doctor: "If it lasts more than 24–48 hours or you cannot keep fluids down.", urgent: "For dark urine, dizziness, dry mouth, or worsening fluid loss.", emergency: "For severe belly pain, blood in vomit or stool, fainting, or confusion." },
+  "Feeling tired or unwell": { now: "Rest and check your temperature. Follow your prescribed fluid limit.", doctor: "If you have a fever or feel worse after a few days.", urgent: "For fever with chills, or redness or drainage at a wound.", emergency: "For confusion, trouble breathing, or if you cannot stay awake." },
+  "Anxiety, stress, or mood changes": { now: "Talk to someone you trust today.", doctor: "If these feelings last more than a couple of weeks or get in the way of daily life.", emergency: "If you are in immediate danger. If you feel unsafe or think about hurting yourself, call or text 988." },
+  "Other symptoms": { now: "Check your discharge instructions or contact your care team.", doctor: "If the symptom persists or gets worse.", urgent: "If you cannot reach your doctor and need prompt help.", emergency: "For sudden or severe symptoms." },
+};
 
-  function submit() {
-    const gain = wt - BASE;
-    if (sym.has("chest")) {
-      setSos(true);
-      setResult("red");
-    } else if (gain >= 3 || sym.has("breath") || sym.has("swell") || sym.has("dizzy")) {
-      setResult("yellow");
-    } else {
-      setResult("green");
-    }
-  }
+function CheckinActionSummary({ symptoms, chestPain }: { symptoms: string[]; chestPain: boolean }) {
+  const hasChestPain = symptoms.includes("Pain or discomfort") && chestPain;
+  const titles: Record<string, string> = { "Pain or discomfort": "Pain", "Breathing problems": "Breathing", "Feeling dizzy or weak": "Dizziness", "Swelling": "Swelling", "Weight changes": "Weight", "Heart or heartbeat problems": "Heartbeat", "Stomach or bathroom problems": "Stomach / bathroom", "Feeling tired or unwell": "Feeling tired", "Anxiety, stress, or mood changes": "Mood", "Other symptoms": "Other symptoms" };
+  return <div className="pt-checkin-summary">
+    {hasChestPain && <section className="pt-symptom-guidance pt-symptom-guidance--emergency"><h2>Chest pain: Call 911 now</h2><p>Do not drive yourself.</p></section>}
+    <section className="pt-summary-actions"><h2>What to do now</h2><ul>{symptoms.filter((symptom) => !(hasChestPain && symptom === "Pain or discomfort")).map((symptom) => <li key={symptom}><strong>{titles[symptom]}</strong><p>{SYMPTOM_ADVICE[symptom].now}</p></li>)}</ul></section>
+    <section className="pt-summary-call"><h2>Call your care team</h2><p>If symptoms are new, keep happening, or get worse.</p><p className="pt-summary-number"><Phone size={24} aria-hidden="true" />{PHONE}</p>
+      <details><summary>When else to call or get urgent care</summary><ul>{symptoms.map((symptom) => { const advice = SYMPTOM_ADVICE[symptom]; return (advice.doctor || advice.urgent) && <li key={symptom}><strong>{titles[symptom]}</strong>{advice.doctor && <p>Call your doctor: {advice.doctor}</p>}{advice.urgent && <p>Get urgent care: {advice.urgent}</p>}</li>; })}</ul></details>
+    </section>
+    <section className="pt-summary-emergency"><h2>Call 911 for an emergency</h2><p>Chest pain, trouble breathing, fainting, confusion, or sudden severe symptoms.</p>
+      <details><summary>More emergency signs</summary><ul>{symptoms.map((symptom) => <li key={symptom}><strong>{titles[symptom]}</strong><p>{SYMPTOM_ADVICE[symptom].emergency}</p></li>)}</ul></details>
+    </section>
+    {symptoms.includes("Anxiety, stress, or mood changes") && <section className="pt-summary-call"><h2>Feeling unsafe?</h2><p>If you think about hurting yourself, call or text 988. Call 911 for immediate danger.</p><p className="pt-crisis-links"><a href="tel:988?oai_link_source=model_response_hotline">Call 988</a><a href="sms:988?oai_link_source=model_response_hotline">Text 988</a></p></section>}
+  </div>;
+}
 
-  const SYMS: Array<[string, string]> = [
-    ["breath", "More short of breath"],
-    ["swell", "More swelling"],
-    ["chest", "Chest pain"],
-    ["dizzy", "Dizzy"],
-    ["fine", "Feeling fine"],
-  ];
+const BODY_REGIONS = [
+  { id: "head", label: "Head", path: "M120 12 C88 12 88 76 120 76 C152 76 152 12 120 12Z" },
+  { id: "neck", label: "Neck", path: "M108 80 L132 80 L138 103 L102 103Z" },
+  { id: "upper", label: "Chest", backLabel: "Upper back", path: "M102 103 Q120 112 138 103 L157 116 Q151 149 146 177 L94 177 Q89 149 83 116Z" },
+  { id: "middle", label: "Belly", backLabel: "Lower back", path: "M94 177 L146 177 Q141 205 149 234 L91 234 Q99 205 94 177Z" },
+  { id: "pelvis", label: "Hips / groin", backLabel: "Hips / buttocks", path: "M91 234 L149 234 Q157 253 153 275 L122 284 L118 284 L87 275 Q83 253 91 234Z" },
+  { id: "screen-left-arm", label: "arm", side: "left", path: "M77 120 L87 144 L76 203 L62 244 L39 235 L53 190 L60 134Z" },
+  { id: "screen-right-arm", label: "arm", side: "right", path: "M163 120 L153 144 L164 203 L178 244 L201 235 L187 190 L180 134Z" },
+  { id: "screen-left-hand", label: "hand", side: "left", path: "M38 240 L60 250 L52 278 Q37 290 27 275Z" },
+  { id: "screen-right-hand", label: "hand", side: "right", path: "M202 240 L180 250 L188 278 Q203 290 213 275Z" },
+  { id: "screen-left-leg", label: "leg", side: "left", path: "M87 278 L116 290 L112 358 L106 420 L81 420 L78 352Z" },
+  { id: "screen-right-leg", label: "leg", side: "right", path: "M153 278 L124 290 L128 358 L134 420 L159 420 L162 352Z" },
+  { id: "screen-left-foot", label: "foot", side: "left", path: "M81 424 L106 424 L105 449 L67 449 Q65 435 81 424Z" },
+  { id: "screen-right-foot", label: "foot", side: "right", path: "M134 424 L159 424 Q175 435 173 449 L135 449Z" },
+];
+
+function SymptomBodyMap({ symptom, selected, onChange }: { symptom: "pain" | "swelling"; selected: string[]; onChange: (areas: string[]) => void }) {
+  const toggle = (key: string) => onChange(selected.includes(key) ? selected.filter((item) => item !== key) : [...selected, key]);
+  const views = (["front", "back"] as const).map((view) => ({ view, regions: BODY_REGIONS.map((region) => {
+    const side = region.side ? (view === "back" ? region.side : region.side === "left" ? "right" : "left") : null;
+    return { ...region, key: `${view}:${side ? `${side}-${region.label}` : region.id}`, name: side ? `${side === "left" ? "Left" : "Right"} ${region.label}` : view === "back" ? region.backLabel || region.label : region.label };
+  }) }));
+  const selectedNames = views.flatMap(({ view, regions }) => regions.filter((region) => selected.includes(region.key)).map((region) => `${view === "front" ? "Front" : "Back"}: ${region.name}`));
+  return <section className="pt-body-map" aria-labelledby={`${symptom}-location-title`}>
+    <h2 id={`${symptom}-location-title`}>{symptom === "pain" ? "Where does it hurt?" : "Where is the swelling?"}</h2>
+    <p>{symptom === "pain" ? "Tap any area that hurts." : "Tap any swollen area."} Tap again to clear it.</p>
+    <div className="pt-static-body-views">
+      {views.map(({ view, regions }) => <div className="pt-static-body-view" key={view}>
+        <h3>{view === "front" ? "Front" : "Back"}</h3>
+        <div className="pt-static-side-labels"><span>{view === "front" ? "Right" : "Left"}</span><span>{view === "front" ? "Left" : "Right"}</span></div>
+        <svg viewBox="0 0 240 462" className="pt-static-body-image" role="group" aria-label={`${view} body areas. Left and right refer to your body.`}>
+          {regions.map((region) => <path key={region.key} d={region.path} role="button" tabIndex={0} aria-label={`${view}: ${region.name}`} aria-pressed={selected.includes(region.key)} className={clsx("pt-body-region", selected.includes(region.key) && "is-selected")} onClick={() => toggle(region.key)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggle(region.key); } }}><title>{region.name}</title></path>)}
+          {view === "front" ? <g fill="none" stroke="#34516a" strokeWidth="2.5" strokeLinecap="round" pointerEvents="none" aria-hidden="true"><circle cx="110" cy="38" r="2" fill="#34516a" /><circle cx="130" cy="38" r="2" fill="#34516a" /><path d="M109 52 Q120 62 131 52" /></g> : <path d="M120 117 L120 225 M103 132 Q110 144 115 144 M137 132 Q130 144 125 144" stroke="#93a8ba" strokeWidth="2" fill="none" pointerEvents="none" aria-hidden="true" />}
+        </svg>
+      </div>)}
+    </div>
+    <details className="pt-body-text-options"><summary>Choose an area by name</summary>
+      {views.map(({ view, regions }) => <div key={view}><h3>{view === "front" ? "Front" : "Back"}</h3><div className="pt-body-area-buttons">{regions.map((region) => <button type="button" key={region.key} aria-pressed={selected.includes(region.key)} onClick={() => toggle(region.key)}>{selected.includes(region.key) && <Check size={20} aria-hidden="true" />}{region.name}</button>)}</div></div>)}
+    </details>
+    <div className="pt-body-map-selection" role="status"><b>Selected areas</b><p>{selectedNames.length ? selectedNames.join("; ") : "No areas selected yet."}</p></div>
+  </section>;
+}
+
+function CheckinScreen({ onClose }: { onClose: () => void }) {
+  const [step, setStep] = useState<"mood" | "symptoms" | "categories" | "complete">("mood");
+  const [mood, setMood] = useState<number | null>(null);
+  const [symptoms, setSymptoms] = useState<string[]>([]);
+  const [painAreas, setPainAreas] = useState<string[]>([]);
+  const [swellingAreas, setSwellingAreas] = useState<string[]>([]);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => { headingRef.current?.closest("main")?.scrollTo({ top: 0, behavior: "instant" }); headingRef.current?.focus({ preventScroll: true }); }, [step]);
+  const moods = ["Very sad", "Sad", "Okay", "Happy", "Very happy"];
 
   return (
-    <section aria-labelledby="h-ci">
-      <h1 id="h-ci">Daily check-in</h1>
-      <p className="lead">
-        Yesterday you weighed <b>182 lb</b>. What do you weigh this morning?
-      </p>
-      <div className="pt-stepper">
-        <button type="button" aria-label="One pound less" onClick={() => setWt((w) => Math.max(120, w - 1))}>
-          <Minus size={34} aria-hidden="true" />
-        </button>
-        <div className="num" aria-live="polite">
-          {wt}
-          <small>pounds</small>
+    <section className="pt-questionnaire" aria-labelledby="h-ci">
+      <p className="pt-questionnaire-kicker">Daily check-in</p>
+      <h1 id="h-ci" ref={headingRef} tabIndex={-1}>
+        {step === "mood" ? "How are you feeling?" : step === "symptoms" ? "Any symptoms?" : step === "categories" ? "What symptoms do you have?" : symptoms.length ? "Your next steps" : "Thank you!"}
+      </h1>
+      {step === "mood" && <>
+        <p className="lead">Choose the face that matches how you feel.</p>
+        <fieldset className="pt-mood-options">
+          <legend className="sr-only">How are you feeling?</legend>
+          {moods.map((label, index) => <label key={label} className={clsx("pt-mood-option", mood === index && "is-selected")}>
+            <input type="radio" name="checkin-mood" value={index} checked={mood === index} onChange={() => setMood(index)} />
+            <svg viewBox="0 0 64 64" width="56" height="56" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true">
+              <circle cx="32" cy="32" r="27" /><circle cx="23" cy="25" r="1.5" fill="currentColor" /><circle cx="41" cy="25" r="1.5" fill="currentColor" />
+              <path d={["M19 45 Q32 29 45 45", "M21 43 Q32 33 43 43", "M21 40 L43 40", "M21 37 Q32 48 43 37", "M19 35 Q32 55 45 35"][index]} strokeLinecap="round" />
+            </svg>
+            <span>{label}</span>
+          </label>)}
+        </fieldset>
+        <button className="pt-btn" type="button" disabled={mood === null} onClick={() => setStep("symptoms")}>Next<ChevronRight size={22} aria-hidden="true" /></button>
+      </>}
+      {step === "symptoms" && <div className="pt-questionnaire-actions">
+        <button className="pt-btn" type="button" onClick={() => { setSymptoms([]); setPainAreas([]); setSwellingAreas([]); setStep("complete"); }}>No</button>
+        <button className="pt-btn pt-btn--ghost" type="button" onClick={() => setStep("categories")}>Yes</button>
+        <button className="pt-btn pt-btn--ghost" type="button" onClick={() => setStep("mood")}>Back</button>
+      </div>}
+      {step === "categories" && <>
+        <p className="lead">Check all that apply.</p>
+        <fieldset className="pt-symptom-options">
+          <legend className="sr-only">Your symptoms</legend>
+          {CHECKIN_SYMPTOMS.map((label) => <div key={label}>
+            <label className="pt-symptom-option">
+              <input type="checkbox" checked={symptoms.includes(label)} onChange={(event) => { const checked = event.target.checked; setSymptoms((current) => checked ? [...current, label] : current.filter((item) => item !== label)); if (!checked && label === "Pain or discomfort") setPainAreas([]); if (!checked && label === "Swelling") setSwellingAreas([]); }} />
+              <span>{label}</span>
+            </label>
+            {label === "Pain or discomfort" && symptoms.includes(label) && <SymptomBodyMap symptom="pain" selected={painAreas} onChange={setPainAreas} />}
+            {label === "Swelling" && symptoms.includes(label) && <SymptomBodyMap symptom="swelling" selected={swellingAreas} onChange={setSwellingAreas} />}
+          </div>)}
+        </fieldset>
+        <div className="pt-questionnaire-actions">
+          <button className="pt-btn" type="button" disabled={symptoms.length === 0} onClick={() => setStep("complete")}>Done</button>
+          <button className="pt-btn pt-btn--ghost" type="button" onClick={() => setStep("symptoms")}>Back</button>
         </div>
-        <button type="button" aria-label="One pound more" onClick={() => setWt((w) => Math.min(260, w + 1))}>
-          <Plus size={34} aria-hidden="true" />
-        </button>
-      </div>
-      <button
-        type="button"
-        className="pt-btn pt-btn--ghost pt-btn--sm"
-        onClick={() => setWt(186)}
-      >
-        DEMO: set to 186 lb (+4)
-      </button>
-      <h2 style={{ marginTop: 16 }}>How do you feel?</h2>
-      <div className="pt-chips" style={{ gap: 10 }}>
-        {SYMS.map(([v, label]) => (
-          <button
-            key={v}
-            className="pt-tog"
-            type="button"
-            aria-pressed={sym.has(v)}
-            onClick={() => toggle(v)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      <button className="pt-btn" type="button" onClick={submit} style={{ marginTop: 12 }}>
-        Submit check-in
-      </button>
-      <div role="status">
-        {result === "green" && (
-          <div className="pt-result pt-result--green">
-            <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-              <Check size={34} aria-hidden="true" />
-              <div>
-                <h2>You&apos;re on track</h2>
-                <p style={{ margin: 0 }}>See you tomorrow.</p>
-              </div>
-            </div>
-          </div>
-        )}
-        {result === "yellow" && (
-          <div className="pt-result pt-result--yellow">
-            <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-              <Phone size={34} aria-hidden="true" />
-              <div>
-                <h2>Call your care team today</h2>
-                <p style={{ margin: "0 0 10px" }}>
-                  Your weight is up {wt - BASE} lb. Please call your care team
-                  today. {PHONE}.
-                </p>
-                <p style={{ margin: 0 }}>
-                  This demonstration does not notify your care team.
-                </p>
-              </div>
-            </div>
-            <button
-              className="pt-btn pt-btn--amber"
-              type="button"
-              onClick={() => call("Care team")}
-              style={{ marginTop: 14, borderWidth: 3 }}
-            >
-              <Phone size={24} aria-hidden="true" />
-              Call care team
-            </button>
-          </div>
-        )}
-        {result === "red" && (
-          <div className="pt-card pt-card--red">
-            <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-              <Siren size={34} aria-hidden="true" />
-              <div>
-                <h2>Call 911</h2>
-                <p style={{ margin: 0 }}>Chest pain can be serious. Do not wait.</p>
-              </div>
-            </div>
-            <button
-              className="pt-btn pt-btn--red"
-              type="button"
-              onClick={() => call("911")}
-            >
-              <Phone size={26} aria-hidden="true" />
-              Call 911
-            </button>
-          </div>
-        )}
-      </div>
+      </>}
+      {step === "complete" && <>
+        {symptoms.length ? <CheckinActionSummary symptoms={symptoms} chestPain={painAreas.includes("front:upper")} /> : <div className="pt-card" role="status"><Check size={36} aria-hidden="true" /><p className="lead">Your check-in is complete.</p></div>}
+        <button className="pt-btn" type="button" onClick={onClose}>Close</button>
+      </>}
+      <p className="pt-questionnaire-note">Demo only. Your answers are not sent to your care team.</p>
     </section>
   );
 }
