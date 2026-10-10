@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { api } from '@/components/client-api';
+import BackendReview, {type BackendDraft} from '@/components/backend-review';
 import Recorder from '@/components/recorder';
 import PlanView from '@/components/plan-view';
 import StructuredEditor from '@/components/structured-editor';
@@ -32,7 +33,8 @@ export default function Review() {
         developmentOnlyOtp: string;
         otpExpiresAt: string;
     }>();
-    const load = useCallback(async () => { const p = await api('discharges/' + id); setPlan(p); setStructured(p.structured || undefined); setAvs(p.clinicalInput || ''); setTranscript(p.transcript || ''); setConfirmed(p.transcriptConfirmed); setReviewed(false); }, [id]);
+    const [backend, setBackend] = useState<BackendDraft>();
+    const load = useCallback(async () => { const p = await api('discharges/' + id); if(p.episode){setBackend(p);return;} setPlan(p); setStructured(p.structured || undefined); setAvs(p.clinicalInput || ''); setTranscript(p.transcript || ''); setConfirmed(p.transcriptConfirmed); setReviewed(false); }, [id]);
     useEffect(() => { load().catch(e => setError(e.message)); }, [load]);
     async function run(fn: () => Promise<void>) { setBusy(true); setError(''); setNotice(''); try {
         await fn();
@@ -43,6 +45,7 @@ export default function Review() {
     finally {
         setBusy(false);
     } }
+    if (backend) return <BackendReview initial={backend} onRefresh={load}/>;
     if (!plan)
         return <main><h1>Discharge review</h1><p role="status">{error || 'Loading draft…'}</p></main>;
     const editable = ['draft', 'review'].includes(plan.status);

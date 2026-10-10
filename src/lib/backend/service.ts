@@ -23,7 +23,7 @@ export async function createDischarge(owner:string,sessionId:string,body:unknown
   await PatientReferenceModel.create([{episodeId,patientId,owner,...data.patient,expiresAt:boundary.expiresAt}],{session});
   await ClinicalPlanModel.create([{episodeId,patientId,planId,version:1,expiresAt:boundary.expiresAt}],{session});
   const sources:SourceProvenance[]=[];
-  if(data.clinicalInput?.trim())sources.push({sourceId:randomUUID(),kind:data.sourceKind,text:data.clinicalInput.trim(),createdAt,documentType:'text/plain',transcriptConfirmed:false});
+  if(data.clinicalInput?.trim())sources.push({sourceId:randomUUID(),kind:data.sourceKind,text:data.clinicalInput,createdAt,documentType:'text/plain',transcriptConfirmed:false});
   if(chart)sources.push({sourceId:randomUUID(),kind:'EPIC_FHIR',text:JSON.stringify(chart),createdAt,documentType:'application/fhir+json',transcriptConfirmed:false});
   for(const source of sources)await SourceModel.create([{...source,episodeId,expiresAt:boundary.expiresAt,requestId:source.sourceId,requestFingerprint:fingerprint(source.text),dateCandidates:extractionDateCandidates(source.text)}],{session});
   return {episodeId,patientId,planId,state:'DRAFT',version:1,...boundary};
@@ -50,7 +50,7 @@ export async function addSource(planId:string,owner:string,body:unknown,file?:Fi
   const claimed=await EpisodeModel.findOneAndUpdate({_id:episode._id,version:episode.version,state:{$in:editable},expiresAt:{$gt:new Date()}},{$set:{state:'DRAFT'},$unset:{approval:1,grantVersion:1,grantInvitationId:1},$inc:{version:1}},{session,new:true});if(!claimed)throw new AppError(409,'Discharge changed. Reload and retry.');
   await invalidate(episode.episodeId,session);
   await SourceModel.create([{sourceId,episodeId:episode.episodeId,requestId:data.requestId,requestFingerprint,kind:data.kind,text:extracted.text,createdAt,documentType:extracted.documentType,transcriptConfirmed:data.transcriptConfirmed,expiresAt:episode.expiresAt,dateCandidates:extractionDateCandidates(extracted.text),objectKey:key}],{session});
-  await ClinicalPlanModel.updateOne({episodeId:episode.episodeId},{$set:{version:claimed.version},$unset:{content:1,model:1,sourceFingerprint:1}},{session});return {sourceId,version:claimed.version,documentType:extracted.documentType,originalStored:!!key};
+  await ClinicalPlanModel.updateOne({episodeId:episode.episodeId},{$set:{version:claimed.version},$unset:{content:1,extraction:1,extractionModel:1,model:1,sourceFingerprint:1}},{session});return {sourceId,version:claimed.version,documentType:extracted.documentType,originalStored:!!key};
  });}catch(e){if(key)await ObjectManifestModel.updateOne({key},{$set:{state:'CLEANUP_PENDING'}});if(duplicate(e)){const prior=await SourceModel.findOne({episodeId:episode.episodeId,requestId:data.requestId});if(prior?.requestFingerprint===requestFingerprint)return {sourceId:prior.sourceId};}throw e;}
 }
 export async function processDischarge(planId:string,owner:string){
@@ -60,7 +60,12 @@ export async function processDischarge(planId:string,owner:string){
  if(sources.some(s=>s.kind==='AUDIO_TRANSCRIPT' && !s.transcriptConfirmed))throw new AppError(422,'Confirm or remove all supplemental transcripts first.');
  const claimed=await EpisodeModel.findOneAndUpdate({_id:episode._id,version:episode.version,state:episode.state,expiresAt:{$gt:new Date()}},{$set:{state:'PROCESSING',processingStartedAt:new Date()}},{new:true});if(!claimed)throw new AppError(409,'Discharge changed. Retry after reloading.');
  try{
-  const generated=await clinicalProcessor.process(sources);const localDate=new Intl.DateTimeFormat('en-CA',{timeZone:episode.dischargeTimezone,year:'numeric',month:'2-digit',day:'2-digit'}).format(episode.dischargeAt);if(sources.some(s=>s.dateCandidates.some(candidate=>candidate.slice(0,10)!==localDate)))generated.content.issues.push({id:'discharge-date-conflict',severity:'critical',description:'A source discharge-date candidate differs from the episode discharge date. Clinician must reconcile before approval.',resolution:null});const sourceFingerprint=fingerprint(sources.map(s=>({sourceId:s.sourceId,text:s.text,kind:s.kind,transcriptConfirmed:s.transcriptConfirmed})));
+  const generated=await clinicalProcessor.process(sources,async(extraction,extractionModel)=>{
+   await transaction(async session=>{
+    const current=await EpisodeModel.findOneAndUpdate({_id:claimed._id,version:claimed.version,state:'PROCESSING',expiresAt:{$gt:new Date()}},{$set:{processingStartedAt:new Date()}},{session,new:true});if(!current)throw new AppError(409,'Discharge changed during extraction.');
+    const saved=await ClinicalPlanModel.updateOne({episodeId:episode.episodeId,version:claimed.version,expiresAt:{$gt:new Date()}},{$set:{extraction,extractionModel}},{session});if(!(saved.matchedCount ?? saved.modifiedCount))throw new AppError(409,'Discharge plan changed during extraction.');
+   });
+  });const localDate=new Intl.DateTimeFormat('en-CA',{timeZone:episode.dischargeTimezone,year:'numeric',month:'2-digit',day:'2-digit'}).format(episode.dischargeAt);if(sources.some(s=>s.dateCandidates.some(candidate=>candidate.slice(0,10)!==localDate)))generated.content.issues.push({id:'discharge-date-conflict',severity:'critical',description:'A source discharge-date candidate differs from the episode discharge date. Clinician must reconcile before approval.',resolution:null});const sourceFingerprint=fingerprint(sources.map(s=>({sourceId:s.sourceId,text:s.text,kind:s.kind,transcriptConfirmed:s.transcriptConfirmed})));
   await transaction(async session=>{
    const saved=await EpisodeModel.findOneAndUpdate({_id:claimed._id,version:claimed.version,state:'PROCESSING',expiresAt:{$gt:new Date()}},{$set:{state:'PENDING_REVIEW'},$unset:{approval:1,grantVersion:1,processingStartedAt:1},$inc:{version:1}},{session,new:true});if(!saved)throw new AppError(409,'Processing lease expired or discharge changed.');
    await invalidate(episode.episodeId,session);await ClinicalPlanModel.updateOne({episodeId:episode.episodeId},{$set:{...generated,sourceFingerprint,version:saved.version}},{session});
@@ -111,6 +116,6 @@ export async function correctSource(planId:string,owner:string,body:unknown){
  const source=await SourceModel.findOne({episodeId:episode.episodeId,sourceId:data.sourceId});if(!source || source.kind==='EPIC_FHIR')throw new AppError(422,'Source cannot be corrected through this endpoint. Add a clinician clarification instead.');
  await transaction(async session=>{
   const saved=await EpisodeModel.findOneAndUpdate({_id:episode._id,version:data.version,state:{$in:editable},expiresAt:{$gt:new Date()}},{$set:{state:'DRAFT'},$unset:{approval:1,grantVersion:1,grantInvitationId:1},$inc:{version:1}},{session,new:true});if(!saved)throw new AppError(409,'Version conflict. Reload source evidence.');
-  await invalidate(episode.episodeId,session);await SourceModel.updateOne({_id:source._id},{$set:{text:data.text,transcriptConfirmed:data.transcriptConfirmed,dateCandidates:extractionDateCandidates(data.text)}},{session});await ClinicalPlanModel.updateOne({episodeId:episode.episodeId},{$set:{version:saved.version},$unset:{content:1,model:1,sourceFingerprint:1}},{session});
+  await invalidate(episode.episodeId,session);await SourceModel.updateOne({_id:source._id},{$set:{text:data.text,transcriptConfirmed:data.transcriptConfirmed,dateCandidates:extractionDateCandidates(data.text)}},{session});await ClinicalPlanModel.updateOne({episodeId:episode.episodeId},{$set:{version:saved.version},$unset:{content:1,extraction:1,extractionModel:1,model:1,sourceFingerprint:1}},{session});
  });return snapshot(planId,owner);
 }

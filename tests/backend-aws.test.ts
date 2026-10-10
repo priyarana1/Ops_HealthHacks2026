@@ -13,7 +13,7 @@ describe('AWS adapters with explicit service doubles',()=>{
   const valid={language:'en',summary:null,hospitalCourse:[],diagnoses:[],medications:[],dailyActions:[],diet:[],fluids:[],activity:[],otherInstructions:[],appointments:[],labsAndMonitoring:[],warningSigns:[],definitions:[],teachBackQuestions:[],practicalBarriers:[],issues:[]};
   const warn=vi.spyOn(console,'warn').mockImplementation(()=>{});
   try{
-   mocked.send.mockResolvedValueOnce({output:{message:{content:[{text:JSON.stringify({...valid,teachBackQuestions:['PRIVATE_INVALID_TEXT']})}]}}}).mockResolvedValueOnce({output:{message:{content:[{text:JSON.stringify(valid)}]}}});
+   mocked.send.mockResolvedValueOnce({output:{message:{content:[{text:JSON.stringify({...valid,teachBackQuestions:['PRIVATE_INVALID_TEXT']})}]}}}).mockResolvedValueOnce({output:{message:{content:[{text:JSON.stringify(valid)}]}}}).mockResolvedValueOnce({output:{message:{content:[{text:'{"rewrites":[]}'}]}}});
    const result=await clinicalProcessor.process([]);
    expect(result.content.language).toBe('en');
    const first=JSON.parse(mocked.send.mock.calls[0][0].input.messages[0].content[0].text);
@@ -36,6 +36,14 @@ describe('AWS adapters with explicit service doubles',()=>{
    expect(feedback).toContain('unsupportedQuantity');
    expect(JSON.stringify(warn.mock.calls)).not.toContain('PRIVATE_SOURCE');
   }finally{warn.mockRestore();}
+ });
+ it('extracts verbatim medication fields first and simplifies only prose after the persistence checkpoint',async()=>{
+  const sourceId='12345678-1234-4234-8234-123456789012',quote='NEW Furosemide 40 mg PO daily.';
+  const extraction={language:'en',summary:null,hospitalCourse:[],diagnoses:[],medications:[{name:'Furosemide',dose:'40 mg',route:'PO',frequency:'daily',duration:null,formulation:null,status:'NEW',notes:'',plainLanguage:quote,evidence:{sourceId,quote}}],dailyActions:[],diet:[],fluids:[],activity:[],otherInstructions:[],appointments:[],labsAndMonitoring:[],warningSigns:[],definitions:[],teachBackQuestions:[],practicalBarriers:[],issues:[]};
+  const checkpoint=vi.fn(async()=>{expect(mocked.send).toHaveBeenCalledTimes(1);});
+  mocked.send.mockResolvedValueOnce({output:{message:{content:[{text:JSON.stringify(extraction)}]}}}).mockResolvedValueOnce({output:{message:{content:[{text:JSON.stringify({rewrites:[{path:'medications.0.plainLanguage',text:'Take Furosemide 40 mg by mouth daily.'}]})}]}}});
+  const result=await clinicalProcessor.process([{sourceId,kind:'FINAL_AVS',text:quote,createdAt:new Date(),documentType:'text/plain',transcriptConfirmed:false}],checkpoint);
+  expect(checkpoint).toHaveBeenCalledOnce();expect(result.content.medications[0].route).toBe('PO');expect(result.content.medications[0].plainLanguage).toContain('by mouth');expect(mocked.send).toHaveBeenCalledTimes(2);
  });
  it('fails closed when SES is unconfigured or rejects mail',async()=>{vi.stubEnv('SES_FROM_EMAIL','');await expect(emailDelivery.sendInvitation({to:'synthetic@example.com',activationUrl:'https://example.com/#token=synthetic',validUntil:new Date()})).rejects.toThrow('Configure');vi.stubEnv('SES_FROM_EMAIL','verified-test@example.com');mocked.load.mockReturnValue({SESv2Client:class{async send(){throw new Error('Denied');}},SendEmailCommand:class{constructor(public input:unknown){}}});await expect(emailDelivery.sendInvitation({to:'synthetic@example.com',activationUrl:'https://example.com/#token=synthetic',validUntil:new Date()})).rejects.toThrow('email delivery failed');});
  it('sends a non-clinical invitation and requires SES acceptance',async()=>{const send=vi.fn(async()=>({MessageId:'synthetic-service-fixture'}));mocked.load.mockReturnValue({SESv2Client:class{send=send;},SendEmailCommand:class{constructor(public input:unknown){}}});await emailDelivery.sendInvitation({to:'synthetic@example.com',activationUrl:'https://example.com/#token=synthetic',validUntil:new Date()});const input=send.mock.calls[0] as unknown as [{input:Record<string,unknown>}];expect(JSON.stringify(input)).toContain('Your ClearPath invitation');expect(JSON.stringify(input)).not.toContain('heart failure');});

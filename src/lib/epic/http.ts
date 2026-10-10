@@ -7,12 +7,14 @@ import { epicStore } from './store';
 import { epicConfig } from './config';
 import { authorizationDiagnostics } from './diagnostics';
 import { fhir } from './client';
+import { lastTokenFailure } from './token-diagnostics';
 import { enrichClinician } from './profile';
 import { fhirId, records, referencedBinary } from './resources';
 export const epicRoute=handler(async(req:NextRequest)=>{
  const user=await identity('provider'),sessionId=user.sessionHash as string;
  const parts=req.nextUrl.pathname.slice('/api/epic/'.length).split('/');
  const action=parts[0];
+ if(action==='token-diagnostics' && req.method==='GET'){if(process.env.NODE_ENV==='production')throw new AppError(404,'Epic endpoint not found.');return {developmentOnly:true,lastFailure:lastTokenFailure(sessionId),note:'Sanitized server-side evidence from this provider session only; expires after 15 minutes or server restart.'};}
  if(action==='diagnostics' && req.method==='GET')return authorizationDiagnostics();
  if(action==='connect' && req.method==='GET'){
   try{return NextResponse.redirect(await authorize(sessionId));}catch(e){if(e instanceof AppError)return NextResponse.redirect(new URL('/provider?epicError='+encodeURIComponent(e.message),process.env.APP_URL || 'http://localhost:3000'));throw e;}

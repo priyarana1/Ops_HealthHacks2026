@@ -1,0 +1,15 @@
+import {describe,it,expect} from 'vitest';
+import {applyRewrites,requireVerbatimExtraction} from '../src/lib/backend/simplification';
+import {sourceInput,type GeneratedContent} from '../src/lib/backend/contracts';
+import {extractDocument} from '../src/lib/backend/documents';
+import {validateClinical} from '../src/lib/backend/policy';
+const sourceId='12345678-1234-4234-8234-123456789012',quote='NEW Furosemide 40 mg PO daily.';
+const extraction:GeneratedContent={language:'en',summary:null,hospitalCourse:[],diagnoses:[],medications:[{name:'Furosemide',dose:'40 mg',route:'PO',frequency:'daily',duration:null,formulation:null,status:'NEW',notes:'',plainLanguage:quote,evidence:{sourceId,quote}}],dailyActions:[],diet:[],fluids:[],activity:[],otherInstructions:[],appointments:[],labsAndMonitoring:[],warningSigns:[],definitions:[],teachBackQuestions:[],practicalBarriers:[],issues:[]};
+describe('Separate verbatim extraction and prose simplification',()=>{
+ it('retains original text whitespace during ingestion',()=>{const text='  Synthetic source\n\nNEW medicine.\n';expect(sourceInput.parse({requestId:sourceId,kind:'FINAL_AVS',text}).text).toBe(text);});
+ it('preserves UTF-8 TXT leading/trailing whitespace during file extraction',async()=>{const text='  Synthetic discharge summary.\r\n\r\n';expect((await extractDocument('chart.txt','text/plain',Buffer.from(text))).text).toBe(text);});
+ it('requires a source-faithful first stage',()=>{expect(()=>requireVerbatimExtraction(extraction)).not.toThrow();expect(()=>requireVerbatimExtraction({...extraction,medications:[{...extraction.medications[0],plainLanguage:'Take by mouth.'}]})).toThrow('medications.0.plainLanguage');});
+ it('allows prose shortening while retaining verbatim structured medication values and evidence',()=>{const result=applyRewrites(extraction,{rewrites:[{path:'medications.0.plainLanguage',text:'Take Furosemide 40 mg by mouth daily.'}]});expect(result.medications[0].route).toBe('PO');expect(result.medications[0].dose).toBe('40 mg');expect(result.medications[0].evidence).toEqual(extraction.medications[0].evidence);expect(extraction.medications[0].plainLanguage).toBe(quote);});
+ it('rejects attempts to change orders, source evidence, add fields or duplicate rewrites',()=>{for(const path of ['medications.0.dose','medications.0.status','medications.0.evidence.quote','__proto__.text','dailyActions.0.text'])expect(()=>applyRewrites(extraction,{rewrites:[{path,text:'changed'}]})).toThrow('existing prose');expect(()=>applyRewrites(extraction,{rewrites:[{path:'medications.0.plainLanguage',text:'a'},{path:'medications.0.plainLanguage',text:'b'}]})).toThrow();});
+ it('still rejects invented quantities in simplified prose',()=>{const result=applyRewrites(extraction,{rewrites:[{path:'medications.0.plainLanguage',text:'Take 80 mg daily.'}]});expect(()=>validateClinical(result,[{sourceId,kind:'FINAL_AVS',text:quote,createdAt:new Date(),documentType:'text/plain',transcriptConfirmed:false}])).toThrow('unsupported');});
+});

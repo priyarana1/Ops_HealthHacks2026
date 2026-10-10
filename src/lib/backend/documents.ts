@@ -18,7 +18,7 @@ export async function extractDocument(name:string,mime:string,buffer:Buffer) {
   const mammoth=optionalDependency<{extractRawText(input:{buffer:Buffer}):Promise<{value:string}>}>('mammoth');
   try{text=(await mammoth.extractRawText({buffer})).value;}catch{throw new AppError(422,'DOCX extraction failed. Supply a valid document or paste text.');}documentType='application/vnd.openxmlformats-officedocument.wordprocessingml.document';
  }else throw new AppError(415,'Supported uploads are PDF, DOCX and UTF-8 TXT; extension, MIME type and content must agree.');
- text=text.trim();if(text.length<10)throw new AppError(422,'No readable discharge text was found. Scanned PDFs require OCR outside this prototype.');if(text.length>120000)throw new AppError(413,'Extracted text exceeds 120,000 characters.');return {text,documentType};
+ if(text.trim().length<10)throw new AppError(422,'No readable discharge text was found. Scanned PDFs require OCR outside this prototype.');if(text.length>120000)throw new AppError(413,'Extracted text exceeds 120,000 characters.');return {text,documentType};
 }
 // PDF text arrives hard-wrapped at the page width, with page markers and tab-separated bullets.
 // Rejoin wrapped lines so evidence quotes match the stored source as written; words are never changed.
