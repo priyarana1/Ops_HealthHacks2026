@@ -1,3 +1,5 @@
+> Backend contract update: see [BACKEND_API.md](BACKEND_API.md) and [BACKEND_SETUP.md](BACKEND_SETUP.md). The current discharge/account APIs use discharge-based expiration and distinct approval/enrollment actions. Existing UI files are preserved but require integration with these new contracts; legacy patient sessions are disabled. Earlier workflow instructions below describe the previous prototype and should not be used as the new backend contract.
+
 # ClearPath
 
 Synthetic-only medical discharge prototype for Rutgers Health Hackathon 2026. Next.js App Router, TypeScript, MongoDB/Mongoose, Epic public FHIR R4 sandbox, AWS SDK v3 (Bedrock Converse, Transcribe Medical, S3), iron-session, and hashed OTP activation.

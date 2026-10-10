@@ -1,0 +1,17 @@
+SYNTHETIC HACKATHON EXAMPLE — not an Epic import or real patient's record.
+Finalized discharge instructions for Synthetic Patient A, age 72.
+Hospital course: You were treated for extra fluid caused by heart failure.
+Discharge diagnoses: heart failure with reduced ejection fraction; hypertension.
+Medication reconciliation:
+NEW: Furosemide 40 mg by mouth once daily.
+CONTINUE: Metoprolol succinate 50 mg by mouth once daily.
+STOP: Lisinopril; it was replaced by another medicine.
+HOLD: Spironolactone pending repeat kidney function and potassium tests. Do not restart unless your clinician tells you to.
+Home instructions: Weigh yourself each morning at the same time. Record your weight and symptoms.
+Diet: Limit sodium to 2 grams daily.
+Fluids: Follow the individualized fluid instructions provided by your heart-failure team. No numeric fluid limit is stated in this example; ask the team to clarify.
+Follow-up: Contact primary care and cardiology to arrange follow-up within 1 week.
+Labs: Obtain a basic metabolic panel before or at early follow-up to check kidney function and potassium.
+Warning signs: Contact your heart-failure team promptly for increased swelling or breathlessness. A numeric weight threshold is not supplied; ask the team to clarify.
+Emergency instructions: Seek emergency care for severe shortness of breath at rest, chest pain or fainting.
+Nursing education: Use teach-back to explain which medicine is stopped and which is held. Confirm that medicines, a scale, transportation and follow-up support are available.

@@ -9,6 +9,7 @@ export async function cookieSession() {
  return getIronSession<Session>(await cookies(),{password:sessionSecret(),cookieName:'clearpath_session',ttl:8*3600,cookieOptions:{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',path:'/'}});
 }
 export async function identity(role?:'provider'|'patient') {
+ if(role==='patient')throw new AppError(401,'Legacy patient sessions are disabled. Use the discharge-based patient account API.');
  const cookie=await cookieSession();if(!cookie.token) throw new AppError(401,'Please sign in with the required role.');
  const key=hash(cookie.token);
  if(process.env.NODE_ENV!=='production') {
