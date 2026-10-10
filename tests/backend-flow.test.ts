@@ -19,6 +19,18 @@ async function draft(){return (await call('discharges','POST',{requestId:'123456
 function generated(){const source=tables().get('SourceModel')![0];return generatedContent.parse({language:'en',summary:null,hospitalCourse:[],diagnoses:[],medications:[],dailyActions:[{text:'Weigh daily.',evidence:{sourceId:source.sourceId,quote:'Weigh daily.'}}],diet:[],fluids:[],activity:[],otherInstructions:[],appointments:[],labsAndMonitoring:[],warningSigns:[],definitions:[],teachBackQuestions:[],practicalBarriers:[],issues:[{id:'source-completeness',severity:'critical',description:'Review all sources',resolution:null}]});}
 async function approved(){const d=await draft();doubles.process.mockResolvedValue({content:generated(),model:{modelId:'SYNTHETIC-TEST-DOUBLE',region:'test',generatedAt:new Date()}});await call(`discharges/${d.planId}/process`,'POST',{});await call(`discharges/${d.planId}/review`,'PATCH',{version:2,resolutions:[{id:'source-completeness',resolution:'Synthetic test fixture reviewed.'}]});expect((await call(`discharges/${d.planId}/approve`,'POST',{version:3,clinicalReviewConfirmed:true})).status).toBe(200);return {...d,version:3};}
 describe('Backend orchestration — test doubles only, no live MongoDB/AWS/email',()=>{
+ it('keeps source and extraction when the later simplification service fails',async()=>{
+  const d=await draft(),extraction=generated(),model={modelId:'SYNTHETIC-TEST-DOUBLE',region:'test',generatedAt:new Date()};
+  doubles.process.mockImplementation(async(_sources,saveExtraction)=>{await saveExtraction(extraction,model);throw new Error('Synthetic stage-two failure');});
+  expect((await call(`discharges/${d.planId}/process`,'POST',{})).status).toBe(503);
+  expect(tables().get('ClinicalPlanModel')![0].extraction).toEqual(extraction);
+  expect(tables().get('ClinicalPlanModel')![0].content).toBeUndefined();
+  expect(tables().get('SourceModel')![0].text).toBe('Weigh daily.');
+  expect(tables().get('EpisodeModel')![0].state).toBe('DRAFT');
+  const source=tables().get('SourceModel')![0];
+  expect((await call(`discharges/${d.planId}/sources`,'PATCH',{version:1,sourceId:source.sourceId,text:'New synthetic source text.',transcriptConfirmed:false})).status).toBe(200);
+  expect(tables().get('ClinicalPlanModel')![0].extraction).toBeUndefined();
+ });
  it('denies enrollment before approval and denies approval with unresolved issues',async()=>{const d=await draft();expect((await call(`discharges/${d.planId}/grant-access`,'POST',{version:1,email:'synthetic@example.com',enrollmentAuthorized:true})).status).toBe(409);expect(doubles.send).not.toHaveBeenCalled();doubles.process.mockResolvedValue({content:generated(),model:{modelId:'test'}});await call(`discharges/${d.planId}/process`,'POST',{});expect((await call(`discharges/${d.planId}/approve`,'POST',{version:2,clinicalReviewConfirmed:true})).status).toBe(422);});
  it('approves, grants, activates once, logs in, retrieves only its plan, and denies access after expiry',async()=>{
   const d=await approved(),grant=await call(`discharges/${d.planId}/grant-access`,'POST',{version:3,email:'synthetic@example.com',enrollmentAuthorized:true});expect(grant.status).toBe(200);const sent=doubles.send.mock.calls[0][0],token=new URL(sent.activationUrl).hash.slice('#token='.length);const activation={token,activationCode:grant.body.activationCode,password:'Synthetic-test-password-123'};
