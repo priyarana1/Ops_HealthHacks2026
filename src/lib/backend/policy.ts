@@ -16,18 +16,28 @@ export function requireState(state:string,allowed:readonly string[]){if(!allowed
 const canonical=(v:unknown):unknown=>Array.isArray(v)?v.map(canonical):v && typeof v==='object'?Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b)).map(([k,x])=>[k,canonical(x)])):v;
 export function fingerprint(value:unknown){return createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');}
 export function extractionDateCandidates(text:string){return [...text.matchAll(/(?:discharge(?:d)?(?:\s+(?:date|at))?\s*[:=]\s*)(\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:\d{2}))?)/gi)].map(m=>m[1]);}
+export class ClinicalValidationError extends AppError {
+ constructor(message:string,readonly retryFeedback:string){super(422,message);}
+}
 export function validateClinical(content:GeneratedContent,sources:SourceProvenance[]) {
  const refs=new Map(sources.map(s=>[s.sourceId,s]));
  const warnings:GeneratedContent['issues']=[];
  const sections=[...(content.summary?[content.summary]:[]),...content.hospitalCourse,...content.diagnoses,...content.dailyActions,...content.diet,...content.fluids,...content.activity,...content.otherInstructions,...content.appointments,...content.labsAndMonitoring,...content.warningSigns,...content.definitions,...content.teachBackQuestions,...content.practicalBarriers,...content.medications];
+ const paths=content.summary?['summary']:[];
+ for(const key of ['hospitalCourse','diagnoses','dailyActions','diet','fluids','activity','otherInstructions','appointments','labsAndMonitoring','warningSigns','definitions','teachBackQuestions','practicalBarriers','medications'] as const)content[key].forEach((_,index)=>paths.push(`${key}.${index}`));
  for(const [i,item] of sections.entries()){
   const source=refs.get(item.evidence.sourceId),quote=item.evidence.quote;
   if(!source || !source.text.includes(quote))throw new AppError(422,'Clinical evidence does not match the stored source.');
   if(source.kind==='AUDIO_TRANSCRIPT' && !source.transcriptConfirmed)throw new AppError(422,'Clinician must confirm the transcript before processing.');
   const text='text' in item?item.text:'meaning' in item?item.meaning:item.plainLanguage+' '+item.notes;
-  const numbers=(v:string)=>v.match(/\d+(?:[.,/]\d+)*(?:\s*(?:mg|mcg|g|kg|mL|L|%|lb|units))?/gi) || [];
-  for(const n of numbers(text))if(!quote.includes(n))throw new AppError(422,'Generated quantities, units or dates are unsupported by their source.');
-  for(const n of numbers(quote))if(!text.includes(n))warnings.push({id:`quantity-${i}`,severity:'critical',description:'A cited source quantity or date is missing from the generated instruction.',resolution:null});
+  // Compare whole quantity tokens, never substring matches (4 must not match 40).
+  // Normalize typography only; do not convert units, doses or written numbers.
+  const numbers=(v:string)=>v.match(/\d+(?:[.,/]\d+)*(?:\s*(?:mcg|mg|kg|mL|lb|units|grams?|liters?|g|L|%)(?![a-zA-Z]))?/gi) || [];
+  const canonicalQuantity=(v:string)=>v.replace(/\s+/g,'').toLowerCase();
+  const sourceNumbers=new Set(numbers(quote).map(canonicalQuantity));
+  const generatedNumbers=new Set(numbers(text).map(canonicalQuantity));
+  for(const n of numbers(text))if(!sourceNumbers.has(canonicalQuantity(n)))throw new ClinicalValidationError(`Generated quantities, units or dates are unsupported by their source at clinical item ${i} (${paths[i]}).`,JSON.stringify({clinicalItem:i,field:paths[i],instruction:text,unsupportedQuantity:n,citedQuote:quote,correction:'Use only quantities present in this exact cited quote. Choose the correct exact source quote for the instruction, or remove unsupported content. Do not invent or convert quantities.'}));
+  for(const n of numbers(quote))if(!generatedNumbers.has(canonicalQuantity(n)))warnings.push({id:`quantity-${i}`,severity:'critical',description:'A cited source quantity or date is missing from the generated instruction.',resolution:null});
   const negation=/\b(?:not|never|avoid|stop|hold|unless|if|provided|until|pending|without)\b/gi;
   for(const token of quote.match(negation) || [])if(!new RegExp('\\b'+token+'\\b','i').test(text))warnings.push({id:`condition-${i}-${token.toLowerCase()}`,severity:'critical',description:'A negation or conditional qualifier from the source requires clinician reconciliation.',resolution:null});
  }

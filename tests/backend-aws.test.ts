@@ -19,9 +19,22 @@ describe('AWS adapters with explicit service doubles',()=>{
    const first=JSON.parse(mocked.send.mock.calls[0][0].input.messages[0].content[0].text);
    expect(first.schema.properties.medications.items.properties.status.enum).toContain('HOLD');
    expect(first.schema.properties.teachBackQuestions.items.required).toEqual(['text','evidence']);
-   const second=mocked.send.mock.calls[1][0].input.messages[0].content[0].text;
+   const second=mocked.send.mock.calls[1][0].input.messages[2].content[0].text;
    expect(second).toContain('teachBackQuestions.0 (invalid_type)');
    expect(JSON.stringify(warn.mock.calls)).not.toContain('PRIVATE_INVALID_TEXT');
+  }finally{warn.mockRestore();}
+ });
+ it('gives Claude private quantity correction context without exposing it in errors or logs',async()=>{
+  const sourceId='12345678-1234-4234-8234-123456789012',quote='PRIVATE_SOURCE Take 40 mg daily.';
+  const bad={language:'en',summary:null,hospitalCourse:[],diagnoses:[],medications:[],dailyActions:[{text:'Take 4 mg daily.',evidence:{sourceId,quote}}],diet:[],fluids:[],activity:[],otherInstructions:[],appointments:[],labsAndMonitoring:[],warningSigns:[],definitions:[],teachBackQuestions:[],practicalBarriers:[],issues:[]};
+  const warn=vi.spyOn(console,'warn').mockImplementation(()=>{});
+  try{
+   mocked.send.mockResolvedValue({output:{message:{content:[{text:JSON.stringify(bad)}]}}});
+   await expect(clinicalProcessor.process([{sourceId,kind:'FINAL_AVS',text:quote,createdAt:new Date(),documentType:'text/plain',transcriptConfirmed:false}])).rejects.toThrow('at clinical item 0');
+   const feedback=mocked.send.mock.calls[1][0].input.messages[2].content[0].text;
+   expect(feedback).toContain('PRIVATE_SOURCE');
+   expect(feedback).toContain('unsupportedQuantity');
+   expect(JSON.stringify(warn.mock.calls)).not.toContain('PRIVATE_SOURCE');
   }finally{warn.mockRestore();}
  });
  it('fails closed when SES is unconfigured or rejects mail',async()=>{vi.stubEnv('SES_FROM_EMAIL','');await expect(emailDelivery.sendInvitation({to:'synthetic@example.com',activationUrl:'https://example.com/#token=synthetic',validUntil:new Date()})).rejects.toThrow('Configure');vi.stubEnv('SES_FROM_EMAIL','verified-test@example.com');mocked.load.mockReturnValue({SESv2Client:class{async send(){throw new Error('Denied');}},SendEmailCommand:class{constructor(public input:unknown){}}});await expect(emailDelivery.sendInvitation({to:'synthetic@example.com',activationUrl:'https://example.com/#token=synthetic',validUntil:new Date()})).rejects.toThrow('email delivery failed');});
