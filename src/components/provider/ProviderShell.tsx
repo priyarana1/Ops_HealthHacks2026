@@ -39,7 +39,7 @@ export function ProviderShell({
     <div className="cp-app">
       <aside className="cp-rail" aria-label="Main navigation">
         <div className="cp-brand">
-          <Brand size={28} onDark />
+          <Brand size={28} />
         </div>
         <Link
           href="/provider"

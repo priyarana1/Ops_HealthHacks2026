@@ -26,7 +26,7 @@ import {
   Clock,
   Send,
   Siren,
-  Menu,
+  ShieldCheck,
 } from "lucide-react";
 import { ELEANOR_PLAN_CONTENT } from "@/mocks/plan";
 import { DEMO_OTP } from "@/mocks/patient";
@@ -40,14 +40,43 @@ type Screen = "otp" | "home" | "meds" | "todo" | "help" | "chat" | "checkin" | "
 export function PatientApp({ expired = false }: { expired?: boolean }) {
   const [lang, setLang] = useState<Language>("en");
   const [screen, setScreen] = useState<Screen>(expired ? "expired" : "otp");
+  const [done, setDone] = useState<Record<string, boolean>>({});
   const [calling, setCalling] = useState<string | null>(null);
   const [sos, setSos] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const deviceRef = useRef<HTMLDivElement>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const t = UI[lang];
   const dir = LANGUAGE_DIR[lang];
   const daysLeft = 27;
+
+  useEffect(() => {
+    if (!sos && !calling) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const dialogs = deviceRef.current?.querySelectorAll<HTMLElement>(".pt-overlay");
+    const dialog = dialogs?.[dialogs.length - 1];
+    if (!dialog) return;
+    dialog.focus();
+    function trapFocus(event: KeyboardEvent) {
+      if (event.key !== "Tab" || !dialog) return;
+      const buttons = Array.from(dialog.querySelectorAll<HTMLElement>("button:not(:disabled), a[href]"));
+      const first = buttons[0];
+      const last = buttons[buttons.length - 1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialog)) {
+        event.preventDefault();
+        first?.focus();
+      }
+    }
+    dialog.addEventListener("keydown", trapFocus);
+    return () => {
+      dialog.removeEventListener("keydown", trapFocus);
+      previous?.focus();
+    };
+  }, [sos, calling]);
 
   function showToast(m: string) {
     setToast(m);
@@ -68,13 +97,10 @@ export function PatientApp({ expired = false }: { expired?: boolean }) {
 
   return (
     <div className="pt-stage">
-      <div className="pt-device">
+      <div className="pt-device pt-clinical" ref={deviceRef}>
         {/* prototype chrome */}
         <div className="pt-proto">
-          <button type="button" aria-label="Prototype info">
-            <Menu size={20} aria-hidden="true" />
-            Prototype
-          </button>
+          <span className="pt-demo-label">Demonstration · Sample patient data</span>
           {!bare && (
             <button
               type="button"
@@ -87,7 +113,7 @@ export function PatientApp({ expired = false }: { expired?: boolean }) {
         </div>
 
         <div className="pt-top">
-          <Brand size={28} />
+          <div className="pt-portal-brand"><Brand size={28} /><span>Patient recovery portal</span></div>
           <span className="pt-who">{bare ? "" : "Eleanor"}</span>
         </div>
 
@@ -110,12 +136,14 @@ export function PatientApp({ expired = false }: { expired?: boolean }) {
               setLang={changeLang}
               daysLeft={daysLeft}
               go={setScreen}
+              done={done}
+              setDone={setDone}
             />
           )}
           {screen === "meds" && (
             <MedsScreen t={t} lang={lang} setLang={changeLang} />
           )}
-          {screen === "todo" && <TodoScreen call={call} />}
+          {screen === "todo" && <TodoScreen call={call} done={done} setDone={setDone} />}
           {screen === "help" && <HelpScreen call={call} setSos={setSos} />}
           {screen === "chat" && <ChatScreen setSos={setSos} call={call} />}
           {screen === "checkin" && <CheckinScreen setSos={setSos} call={call} />}
@@ -150,38 +178,35 @@ export function PatientApp({ expired = false }: { expired?: boolean }) {
 
         {/* 911 takeover */}
         {sos && (
-          <div className="pt-overlay pt-sos" role="alertdialog" aria-labelledby="sosH">
-            <div>
-              <Siren size={72} aria-hidden="true" />
+          <div className="pt-overlay pt-sos" role="alertdialog" aria-modal="true" aria-labelledby="sosH" aria-describedby="sosDescription" tabIndex={-1}>
+            <header className="pt-emergency-header"><Brand size={26} /><span>Emergency guidance</span></header>
+            <div className="pt-emergency-body">
+              <div className="pt-emergency-label"><AlertTriangle size={20} aria-hidden="true" />Immediate attention needed</div>
+              <h1 id="sosH">Call 911 now</h1>
+              <p id="sosDescription">Chest pain can be serious. Do not wait for a response through this portal.</p>
+              <div className="pt-emergency-guidance">
+                <h2>What to do now</h2>
+                <ol><li>Call 911 for emergency assistance.</li><li>Do not drive yourself.</li></ol>
+              </div>
+              <button className="pt-btn pt-emergency-call" onClick={() => call("911")}><Phone size={22} aria-hidden="true" />Call 911</button>
+              <p className="pt-emergency-note">Demonstration only. This button previews the call screen; it does not place a call or notify your care team.</p>
+              <button className="pt-btn back" onClick={() => setSos(false)}>Return to my plan</button>
             </div>
-            <h1 id="sosH">This can be an emergency.</h1>
-            <p>Chest pain can be serious. Do not wait.</p>
-            <button className="pt-btn" onClick={() => call("911")}>
-              <Phone size={32} aria-hidden="true" />
-              Call 911 now
-            </button>
-            <p style={{ marginTop: 18 }}>
-              Do not drive yourself.
-              <br />
-              Your care team has been told.
-            </p>
-            <button className="pt-btn back" onClick={() => setSos(false)}>
-              Not an emergency? Go back
-            </button>
+            <footer className="pt-emergency-footer"><ShieldCheck size={16} aria-hidden="true" />ClearPath · Patient recovery support</footer>
           </div>
         )}
 
         {/* calling mock */}
         {calling && (
-          <div className="pt-overlay pt-calling" role="dialog" aria-labelledby="callH">
+          <div className="pt-overlay pt-calling" role="dialog" aria-modal="true" aria-labelledby="callH" tabIndex={-1}>
             <div className="box">
               <Phone size={44} aria-hidden="true" />
               <h2 id="callH" style={{ marginTop: 8 }}>
-                Calling {calling}…
+                Call preview: {calling}
               </h2>
-              <p className="fine">MOCK: no call is made in this prototype.</p>
+              <p className="fine">Demonstration only. No call is placed.</p>
               <button className="pt-btn" onClick={() => setCalling(null)}>
-                End call
+                Close preview
               </button>
             </div>
           </div>
@@ -329,12 +354,16 @@ function HomeScreen({
   setLang,
   daysLeft,
   go,
+  done,
+  setDone,
 }: {
   t: (typeof UI)[Language];
   lang: Language;
   setLang: (l: Language) => void;
   daysLeft: number;
   go: (s: Screen) => void;
+  done: Record<string, boolean>;
+  setDone: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
 }) {
   const content = ELEANOR_PLAN_CONTENT[lang];
   const C = 2 * Math.PI * 38;
@@ -347,6 +376,13 @@ function HomeScreen({
     <section>
       <h1>{t.hello}</h1>
       <p className="lead">{t.sub}</p>
+      <div className="pt-daily-plan">
+        <div className="pt-plan-heading"><h2>{t.todoNav}</h2><span className="muted tn">{content.todos.filter((item) => done[item.id]).length} / {content.todos.length}</span></div>
+        <progress className="pt-plan-progress" aria-label={t.todoNav} value={content.todos.filter((item) => done[item.id]).length} max={content.todos.length} />
+        {content.todos.map((item) => <button key={item.id} className="pt-todo" type="button" aria-pressed={!!done[item.id]} onClick={() => setDone((prev) => ({ ...prev, [item.id]: !prev[item.id] }))}><span className="box"><Check size={22} aria-hidden="true" /></span><span className="t">{item.label}</span></button>)}
+        <button className="pt-btn pt-btn--ghost" type="button" onClick={() => go("checkin")}><Heart size={22} aria-hidden="true" />{t.checkin}<ChevronRight size={20} aria-hidden="true" /></button>
+      </div>
+      <button className="pt-buddy" type="button" onClick={() => go("chat")}><span className="pt-buddy-icon"><MessageCircle size={26} aria-hidden="true" /></span><span><b>{t.tabChat}</b><small>{lang === "en" ? "Review information from your discharge plan." : t.sub}</small></span><ChevronRight size={22} aria-hidden="true" /></button>
       <button className="pt-btn pt-btn--big" type="button">
         <Volume2 size={30} aria-hidden="true" />
         <span>{t.play}</span>
@@ -507,9 +543,8 @@ function MedsScreen({
 }
 
 /* ---------- To-do + appointments ---------- */
-function TodoScreen({ call }: { call: (who: string) => void }) {
+function TodoScreen({ call, done, setDone }: { call: (who: string) => void; done: Record<string, boolean>; setDone: React.Dispatch<React.SetStateAction<Record<string, boolean>>> }) {
   const content = ELEANOR_PLAN_CONTENT.en;
-  const [done, setDone] = useState<Record<string, boolean>>({});
   return (
     <section aria-labelledby="h-todo">
       <h1 id="h-todo">Today&apos;s to-do</h1>
@@ -578,7 +613,7 @@ function HelpScreen({
   return (
     <section aria-labelledby="h-help">
       <h1 id="h-help">Get help</h1>
-      <p className="lead">Two kinds of help. Pick the one that matches how you feel.</p>
+      <p className="lead">Review the symptoms below to find the appropriate level of care.</p>
       <div className="pt-zone pt-zone--yellow">
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <Phone size={34} aria-hidden="true" />
@@ -625,10 +660,7 @@ function HelpScreen({
           Call 911
         </button>
       </div>
-      <p className="fine">
-        Each box has an icon, a label, and a heading. You never have to rely on
-        color alone.
-      </p>
+
       {/* keep setSos referenced for parity with chat/check-in escalation */}
       <button
         type="button"
@@ -690,7 +722,7 @@ function ChatScreen({
         setSos(true);
         reply = {
           who: "care",
-          html: "<b>This can be an emergency. Call 911 now.</b> Your care team has been told.",
+          html: "<b>This can be an emergency. Call 911 now.</b> This demonstration does not notify your care team.",
         };
       } else if (/alone|lonely|sad|depress/.test(l)) {
         reply = {
@@ -725,7 +757,7 @@ function ChatScreen({
   return (
     <section aria-labelledby="h-chat">
       <h1 id="h-chat">Ask about your plan</h1>
-      <p className="fine">I only answer from your approved plan.</p>
+      <p className="fine">Answers are based on your approved discharge plan.</p><div className="pt-message-notice"><Clock size={18} aria-hidden="true" /><span>For urgent concerns, call your care team. For an emergency, call 911.</span></div>
       <div className="pt-chat" aria-live="polite">
         {msgs.map((b, i) => (
           <div
@@ -881,7 +913,7 @@ function CheckinScreen({
                   today. {PHONE}.
                 </p>
                 <p style={{ margin: 0 }}>
-                  <b>We&apos;ve let your care team know.</b>
+                  This demonstration does not notify your care team.
                 </p>
               </div>
             </div>

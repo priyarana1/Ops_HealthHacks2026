@@ -116,10 +116,10 @@ function CoordinatorInner() {
   const ex7Q2K = audit.find((a) => a.id === "DSC-7Q2K");
 
   return (
-    <div className="cp-app">
+    <div className="cp-app cp-coordinator">
       <aside className="cp-rail" aria-label="Main navigation">
         <div className="cp-brand">
-          <Brand size={28} onDark />
+          <Brand size={28} />
         </div>
         <button
           className={clsx("cp-nav", view === "esc" && "cp-nav--on")}
@@ -173,23 +173,23 @@ function CoordinatorInner() {
         <div className="cp-content">
           {view === "esc" ? (
             <>
-              <h1>Who needs attention</h1>
+              <div className="cp-page-heading"><div><span className="cp-eyebrow">CARE COORDINATION</span><h1>Who needs attention</h1><p className="muted">A clear view of your patients. Start with those who need you most.</p></div><Chip tone="sage"><Check size={14} aria-hidden="true" />{ESCALATIONS.length} patients monitored</Chip></div>
               <div className="cp-stats" aria-label="Summary">
                 <span className="cp-stat" style={{ background: "var(--red-bg)", color: "var(--red-fg)" }}>
                   <Siren size={16} aria-hidden="true" />
-                  Red: {red}
+                  <span><b>{red}</b><small>Urgent follow-up</small></span>
                 </span>
                 <span className="cp-stat" style={{ background: "var(--amber-bg)", color: "var(--amber-fg)" }}>
                   <Phone size={16} aria-hidden="true" />
-                  Yellow: {yel}
+                  <span><b>{yel}</b><small>Call today</small></span>
                 </span>
                 <span className="cp-stat" style={{ background: "var(--blue-bg)", color: "var(--blue-fg)" }}>
                   <AlertTriangle size={16} aria-hidden="true" />
-                  Flags: {flags}
+                  <span><b>{flags}</b><small>Needs a check-in</small></span>
                 </span>
               </div>
               <div className="cp-card cp-scroll-x" style={{ padding: "6px 8px" }}>
-                <table className="cp-table">
+                <div className="cp-queue-heading"><h2>Patient follow-up queue</h2><span className="muted">Latest check-ins</span></div><table className="cp-table">
                   <thead>
                     <tr>
                       <th>Patient (synthetic)</th>
@@ -202,9 +202,9 @@ function CoordinatorInner() {
                   </thead>
                   <tbody>
                     {ESCALATIONS.map((r) => (
-                      <tr key={r.id}>
+                      <tr key={r.id} data-zone={r.zone}>
                         <td>
-                          <b>{r.name}</b>
+                          <div className="cp-patient-cell"><span className="cp-avatar" aria-hidden="true">{r.name.split(" ").map((n) => n[0]).join("")}</span><span><b>{r.name}</b><small>{r.dx}</small></span></div>
                         </td>
                         <td>
                           <ZoneChip zone={r.zone} />
@@ -238,8 +238,7 @@ function CoordinatorInner() {
                 </table>
               </div>
               <p className="muted" style={{ marginTop: 12, fontSize: 13 }}>
-                Read-only. Every row shows an icon, a label, and a color, so no
-                status depends on color alone. Names are synthetic.
+                Synthetic patient data · Open a patient to review their follow-up needs.
               </p>
             </>
           ) : (

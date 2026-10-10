@@ -37,7 +37,7 @@ export default function SignInPage() {
       <div className="cp-card">
         <Brand size={30} />
         <h1 style={{ margin: "18px 0 6px" }}>Provider sign-in</h1>
-        <p className="muted">For clinical staff at RWJ New Brunswick.</p>
+        <p className="muted">Clinical staff access · Demonstration environment.</p>
 
         {error === "bad" && (
           <Banner tone="red" icon="alert">
