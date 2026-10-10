@@ -42,7 +42,7 @@ export default function UploadDischarge() {
       const form = new FormData();
       form.set('requestId', crypto.randomUUID()); form.set('kind', kind); form.set('file', file);
       await api(`discharges/${planId}/sources`, 'POST', form);
-      router.push(`/provider/discharge/${planId}?generate=1`);
+      router.push(`/provider/drafts/${planId}?generate=1`);
     } catch (err) {
       setError((err as Error).message); setStatus('');
     }

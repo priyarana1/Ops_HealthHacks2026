@@ -1,16 +1,106 @@
-'use client';
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { api } from '@/components/client-api';
-import { Button } from '@/components/ui/button';
-export default function SignIn() { const router = useRouter(); const [localEnabled,setLocalEnabled]=useState(false);useEffect(()=>{api('auth/config').then(c=>setLocalEnabled(c.localWorkspaceEnabled)).catch(()=>{});},[]); const [error, setError] = useState(''), [busy, setBusy] = useState(false); return <main style={{ maxWidth: 520 }}><h1>Provider sign in</h1><p>Use your configured ClearPath development account. Epic connection happens separately after sign-in.</p>{localEnabled && <section className="card"><h2>Local synthetic sandbox workspace</h2><p>No provider credentials are configured. This development-only workspace creates a short-lived server-side session on localhost. It does not identify you as an Epic clinician; connect to Epic separately.</p><Button disabled={busy} onClick={async()=>{setBusy(true);setError('');try{await api('auth/development','POST',{});router.push('/provider');router.refresh();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}}>Open local provider workspace</Button></section>}<form className="card" onSubmit={async (e) => { e.preventDefault(); setBusy(true); setError(''); const form = new FormData(e.currentTarget); try {
-    await api('auth/signin', 'POST', { email: form.get('email'), password: form.get('password') });
-    router.push('/provider');
-    router.refresh();
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Brand } from "@/components/ui/Brand";
+import { Button } from "@/components/ui/Button";
+import { Banner } from "@/components/ui/Banner";
+import { clsx } from "@/lib/clsx";
+
+type Role = "Nurse" | "Hospitalist" | "Patient";
+
+/**
+ * Provider sign-in. Mirrors ProviderApp.html: role-segmented control where the
+ * Patient role is blocked (patients use their mobile link instead). This is a demo
+ * gate — no credentials are transmitted or stored. Any password works except "wrong".
+ */
+export default function SignInPage() {
+  const router = useRouter();
+  const [role, setRole] = useState<Role>("Nurse");
+  const [password, setPassword] = useState("correct-horse-battery");
+  const [error, setError] = useState<"bad" | "patient" | null>(null);
+
+  function signIn() {
+    if (!password || password === "wrong") return setError("bad");
+    if (role === "Patient") return setError("patient");
+    // Persist the chosen role for the shell greeting (demo only, no PHI).
+    try {
+      sessionStorage.setItem("cp_role", role);
+    } catch {
+      /* ignore storage errors */
+    }
+    router.push("/provider");
+  }
+
+  return (
+    <div className="cp-login">
+      <div className="cp-card">
+        <Brand size={30} />
+        <h1 style={{ margin: "18px 0 6px" }}>Provider sign-in</h1>
+        <p className="muted">Clinical staff access · Demonstration environment.</p>
+
+        {error === "bad" && (
+          <Banner tone="red" icon="alert">
+            Email or password not recognized.
+          </Banner>
+        )}
+        {error === "patient" && (
+          <Banner tone="red" icon="lock">
+            Access denied. This portal is for clinical staff. Patients receive a
+            secure mobile link.
+          </Banner>
+        )}
+
+        <label className="cp-label" htmlFor="em">
+          Email
+        </label>
+        <input
+          id="em"
+          className="cp-input"
+          defaultValue="priya.nair@rwjbh.example"
+          autoComplete="off"
+        />
+
+        <label className="cp-label" htmlFor="pw">
+          Password
+        </label>
+        <input
+          id="pw"
+          className="cp-input"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+
+        <label className="cp-label">Role</label>
+        <div className="cp-seg" role="group" aria-label="Role">
+          {(["Nurse", "Hospitalist", "Patient"] as Role[]).map((r) => (
+            <button
+              key={r}
+              type="button"
+              className={clsx(
+                role === r && "cp-seg--on",
+                r === "Patient" && "cp-seg--dis",
+              )}
+              aria-pressed={role === r}
+              onClick={() => setRole(r)}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
+        <p className="muted" style={{ fontSize: 13 }}>
+          Patients use the mobile link, not this portal.
+        </p>
+
+        <Button style={{ width: "100%", marginTop: 10 }} onClick={signIn}>
+          Sign in
+        </Button>
+        <p className="muted" style={{ fontSize: 13, margin: "14px 0 0" }}>
+          Prototype: any password works except &quot;wrong&quot;. Pick Patient to
+          see the blocked state.
+        </p>
+      </div>
+    </div>
+  );
 }
-catch (e) {
-    setError((e as Error).message);
-}
-finally {
-    setBusy(false);
-} }}><label htmlFor="email">Email</label><input id="email" name="email" type="email" autoComplete="username" required/><label htmlFor="password">Password</label><input id="password" name="password" type="password" autoComplete="current-password" required/><Button disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</Button>{error && <p role="alert" className="error">{error}</p>}</form></main>; }

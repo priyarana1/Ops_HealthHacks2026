@@ -39,7 +39,7 @@ export default function DischargeDraft() {
 
   useEffect(() => {
     load().then(() => {
-      if (search.get('generate') && !autoStarted.current) { autoStarted.current = true; router.replace(`/provider/discharge/${planId}`); generate(); }
+      if (search.get('generate') && !autoStarted.current) { autoStarted.current = true; router.replace(`/provider/drafts/${planId}`); generate(); }
     }).catch(e => setError(e.message));
   }, [load, generate, planId, router, search]);
 

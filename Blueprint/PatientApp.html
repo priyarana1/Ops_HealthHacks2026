@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ClearPath – Patient app prototype</title>
+<!--
+USER STORIES COVERED: OTP + wrong code / cool-down / expired; large-font, high-contrast, no-horizontal-scroll plan;
+NEW / KEEP / STOP-HOLD blocks + "do not take both" (Note 1 and Note 3); yellow vs red zones + 911; per-section audio;
+language switch EN / ES / ZH / AR with RTL and identical drug names + numbers; plan-expired page; grounded chatbot with
+911 / 988 / out-of-plan refusal / benign text; daily check-in green / yellow / red; 30-day countdown; caregiver share;
+teach-back; appointments with "no date yet"; stent device-care card. All data is synthetic.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Fraunces:opsz,wght@9..144,500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;600&family=Noto+Sans+SC:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#FBF7F0; --card:#FFFFFF; --line:#E6DFD1; --text:#231F1A; --muted:#51493F;
+  --primary:#0F4C5C; --on-primary:#FFFFFF; --ink:#0F4C5C; --ink-soft:#2A6B7C;
+  --sage:#4F8A62; --sage-bg:#E7F0E8; --sage-fg:#244C31;
+  --blue:#2F6DA3; --blue-bg:#E2ECF4; --blue-fg:#173F66;
+  --amber:#C6821F; --amber-bg:#FBEFD8; --amber-fg:#5E3600;
+  --red:#B22A2A; --red-bg:#F7E0DE; --red-fg:#7D1515; --red-solid:#B22A2A;
+  --gray:#8A857B; --gray-bg:#EFEAE0; --gray-fg:#3F3A32;
+  --shadow1:0 2px 8px rgba(20,20,20,.06); --shadow2:0 8px 24px rgba(20,20,20,.10);
+  --focus:#0F4C5C; --backdrop:#E9E0CF;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --paper:#121C1B; --card:#1B2928; --line:#2D403E; --text:#F3EEE4; --muted:#CFC8BA;
+    --primary:#6CC7D9; --on-primary:#08262D; --ink:#8ED6E4; --ink-soft:#6CC7D9;
+    --sage:#7FBF93; --sage-bg:#20392A; --sage-fg:#C9E9D2;
+    --blue:#7FB2DE; --blue-bg:#1C3348; --blue-fg:#C7DFF4;
+    --amber:#E0A64A; --amber-bg:#3E2F10; --amber-fg:#F8DEA8;
+    --red:#F07F78; --red-bg:#4B1F1D; --red-fg:#FFD3CE;
+    --gray:#A29D91; --gray-bg:#2A2F2D; --gray-fg:#D9D4C8;
+    --focus:#8ED6E4; --backdrop:#0A1211;
+  }
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:var(--backdrop);color:var(--text);font-family:'Atkinson Hyperlegible',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:20px;line-height:1.5;-webkit-text-size-adjust:100%}
+:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+button{font-family:inherit;color:inherit;cursor:pointer}
+.stage{min-height:100%;display:flex;align-items:center;justify-content:center;padding:24px}
+.device{position:relative;width:390px;height:844px;background:var(--paper);border-radius:44px;box-shadow:0 0 0 10px #1b2827,0 0 0 11px #3b4c4b,var(--shadow2);overflow:hidden;display:flex;flex-direction:column}
+@media (min-width:481px) and (max-height:900px){.device{height:min(844px,calc(100vh - 48px))}}
+@media (max-width:480px){.stage{padding:0;display:block}.device{width:100%;height:100vh;height:100dvh;border-radius:0;box-shadow:none}}
+.ic{flex:none}
+
+/* prototype chrome (not part of the patient UI) */
+.proto{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:calc(8px + env(safe-area-inset-top)) 12px 8px;background:var(--gray-bg);border-bottom:1px solid var(--line)}
+.proto button{min-height:44px;padding:6px 12px;border-radius:12px;font-size:15px;font-weight:700;display:inline-flex;align-items:center;gap:6px;background:transparent;border:2px solid var(--ink);color:var(--ink)}
+.proto .demo{border-color:var(--amber);color:var(--amber-fg);background:var(--amber-bg)}
+.top{display:flex;align-items:center;gap:10px;padding:10px 20px;background:var(--paper)}
+.brand{font-family:Fraunces,Georgia,serif;font-weight:700;font-size:24px;color:var(--ink);letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+.top .spacer{flex:1}
+.top .who{font-size:16px;color:var(--muted)}
+
+main{flex:1;overflow-y:auto;overflow-x:hidden;padding:4px 20px 28px;-webkit-overflow-scrolling:touch}
+.screen{display:none}
+.screen.active{display:block}
+.lang-zh{font-family:'Noto Sans SC','Atkinson Hyperlegible',system-ui,sans-serif}
+.lang-ar{font-family:'IBM Plex Sans Arabic','Atkinson Hyperlegible',system-ui,sans-serif}
+h1,h2,h3{font-family:Fraunces,Georgia,serif;font-weight:600;margin:0}
+.lang-zh h1,.lang-zh h2,.lang-zh h3{font-family:'Noto Sans SC',sans-serif}
+.lang-ar h1,.lang-ar h2,.lang-ar h3{font-family:'IBM Plex Sans Arabic',sans-serif}
+h1{font-size:30px;line-height:1.2;margin:10px 0 8px;letter-spacing:-.01em}
+h2{font-size:26px;line-height:1.2;margin:0 0 8px}
+h3{font-size:22px;line-height:1.25}
+p{margin:0 0 12px}
+.lead{color:var(--muted)}
+.fine{font-size:18px;color:var(--muted)}
+.center{text-align:center}
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:20px;box-shadow:var(--shadow1);margin:16px 0}
+.card.sage{background:var(--sage-bg);color:var(--sage-fg);border-color:transparent}
+.card.amber{background:var(--amber-bg);color:var(--amber-fg);border:2px solid var(--amber)}
+.card.red{background:var(--red-bg);color:var(--red-fg);border:2px solid var(--red)}
+.card.blue{background:var(--blue-bg);color:var(--blue-fg);border-color:transparent}
+.card.gray{background:var(--gray-bg);color:var(--gray-fg);border-color:transparent}
+.row{display:flex;gap:12px;align-items:center}
+.row.top-al{align-items:flex-start}
+
+.btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:56px;padding:12px 20px;border:0;border-radius:16px;background:var(--primary);color:var(--on-primary);font-size:20px;font-weight:700;line-height:1.2;transition:transform .12s ease,filter .12s ease;text-decoration:none}
+.btn:active{transform:scale(.98);filter:brightness(.95)}
+.btn.big{min-height:72px;font-size:24px;border-radius:20px;box-shadow:var(--shadow2)}
+.btn.red{background:var(--red-solid);color:#fff}
+.btn.ghost{background:transparent;color:var(--ink);border:2px solid var(--ink)}
+.btn.amber{background:var(--amber-bg);color:var(--amber-fg);border:2px solid var(--amber)}
+.btn.sm{width:auto;min-height:48px;padding:8px 16px;font-size:18px;border-radius:14px}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:999px;font-size:16px;font-weight:700;line-height:1.2}
+.chip.sage{background:var(--sage-bg);color:var(--sage-fg)}.chip.blue{background:var(--blue-bg);color:var(--blue-fg)}
+.chip.amber{background:var(--amber-bg);color:var(--amber-fg)}.chip.red{background:var(--red-bg);color:var(--red-fg)}
+.chip.gray{background:var(--gray-bg);color:var(--gray-fg)}
+.fine-link{background:none;border:0;color:var(--ink);font-size:18px;font-weight:700;text-decoration:underline;min-height:48px;padding:0 8px}
+
+/* language bar */
+.langbar{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}
+.pill{min-height:56px;border-radius:16px;border:2px solid var(--line);background:var(--card);display:flex;align-items:center;justify-content:center;gap:8px;font-size:20px;font-weight:700;padding:6px 10px;color:var(--text)}
+.pill.on{background:var(--primary);color:var(--on-primary);border-color:var(--primary)}
+
+/* countdown */
+.count{display:flex;gap:16px;align-items:center}
+.ring{position:relative;width:92px;height:92px;flex:none}
+.ring svg{transform:rotate(-90deg)}
+.ring b{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:Fraunces,Georgia,serif;font-size:40px;line-height:1}
+.linkcard{display:flex;align-items:center;gap:14px;width:100%;text-align:start;min-height:72px;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:14px 18px;margin:12px 0;box-shadow:var(--shadow1);font-size:20px}
+.linkcard b{display:block;font-size:20px}.linkcard small{display:block;font-size:17px;color:var(--muted)}
+.linkcard .go{margin-inline-start:auto;color:var(--ink)}
+[dir=rtl] .linkcard .go{transform:scaleX(-1)}
+
+/* OTP */
+.sms{display:block;width:100%;text-align:start;background:var(--blue-bg);color:var(--blue-fg);border:0;border-radius:20px;padding:16px;margin:16px 0}
+.sms q{display:block;font-size:20px;font-weight:700;margin:10px 0 6px;quotes:none}
+.sms small{font-size:16px}
+.otp{display:flex;gap:8px;justify-content:center;direction:ltr;margin:20px 0 12px}
+.otp input{width:52px;height:64px;text-align:center;font-size:30px;font-weight:700;border-radius:14px;border:2px solid var(--ink-soft);background:var(--card);color:var(--text);font-family:inherit;padding:0}
+.otp input:disabled{opacity:.5}
+.msg{border-radius:16px;padding:14px 16px;margin:12px 0;font-weight:700;display:flex;gap:10px;align-items:flex-start}
+.msg.red{background:var(--red-bg);color:var(--red-fg);border:2px solid var(--red)}
+
+/* medicines */
+.switch{display:flex;align-items:center;gap:12px;min-height:56px;background:var(--gray-bg);border-radius:16px;padding:8px 14px;margin:12px 0;font-size:18px;font-weight:700;cursor:pointer;color:var(--gray-fg)}
+.switch input{width:28px;height:28px;accent-color:var(--primary)}
+.block{--c:var(--sage);background:var(--card);border:1px solid var(--line);border-inline-start:8px solid var(--c);border-radius:20px;overflow:hidden;margin:20px 0;box-shadow:var(--shadow1)}
+.block.keep{--c:var(--blue)}.block.stop{--c:var(--red)}
+.block-h{display:flex;align-items:center;gap:10px;padding:14px 14px 14px 16px;flex-wrap:wrap}
+.block.new .block-h{background:var(--sage-bg);color:var(--sage-fg)}
+.block.keep .block-h{background:var(--blue-bg);color:var(--blue-fg)}
+.block.stop .block-h{background:var(--red-bg);color:var(--red-fg)}
+.block-h .verb{font-family:Fraunces,Georgia,serif;font-size:26px;font-weight:700;line-height:1}
+.lang-zh .block-h .verb,.lang-ar .block-h .verb{font-family:inherit}
+.block-h .lbl{font-size:18px;font-weight:700;flex:1 1 100%}
+.listen{margin-inline-start:auto;min-height:48px;padding:6px 14px;border-radius:14px;border:2px solid currentColor;background:transparent;display:inline-flex;align-items:center;gap:6px;font-size:18px;font-weight:700}
+.med{padding:16px 18px;border-top:1px solid var(--line)}
+.med-name{font-size:22px;font-weight:700;line-height:1.3}
+.dose{color:var(--ink)}
+.med-time{font-size:20px}
+.med-note{font-size:18px;color:var(--muted);margin-top:2px}
+.block.stop .med-name{text-decoration:line-through;text-decoration-thickness:2px}
+.warn{display:flex;gap:10px;align-items:flex-start;background:var(--red-bg);color:var(--red-fg);border:2px solid var(--red);border-radius:14px;padding:12px 14px;margin-top:10px;font-weight:700;font-size:19px;line-height:1.35}
+.ex2{background:var(--blue-bg);color:var(--blue-fg);border-radius:16px;padding:12px 14px;font-size:18px;font-weight:700;margin:8px 0}
+
+/* todo */
+.todo{display:flex;align-items:center;gap:14px;width:100%;min-height:64px;text-align:start;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:10px 16px;margin:10px 0;font-size:20px}
+.todo .box{width:34px;height:34px;border-radius:10px;border:3px solid var(--ink-soft);display:flex;align-items:center;justify-content:center;flex:none;color:transparent}
+.todo[aria-pressed=true] .box{background:var(--sage);border-color:var(--sage);color:#fff}
+.todo[aria-pressed=true] .t{text-decoration:line-through;color:var(--muted)}
+.appt h3{margin-bottom:2px}
+
+/* zones */
+.zone{border-radius:22px;padding:20px;margin:16px 0}
+.zone.yellow{background:var(--amber-bg);color:var(--amber-fg);border:3px solid var(--amber)}
+.zone.red{background:var(--red-bg);color:var(--red-fg);border:3px solid var(--red)}
+.zone ul{margin:10px 0 16px;padding-inline-start:22px}.zone li{margin:6px 0}
+
+/* chat */
+.chat{display:flex;flex-direction:column;gap:12px;margin:12px 0}
+.bub{max-width:92%;padding:14px 16px;border-radius:20px;font-size:20px;line-height:1.45}
+.bub.bot{background:var(--card);border:1px solid var(--line);border-end-start-radius:6px;align-self:flex-start}
+.bub.me{background:var(--primary);color:var(--on-primary);border-end-end-radius:6px;align-self:flex-end}
+.bub.care{background:var(--sage-bg);color:var(--sage-fg);border-color:transparent}
+.bub .src{display:block;font-size:16px;color:var(--muted);margin-top:6px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 12px}
+.qchip{min-height:56px;padding:8px 16px;border-radius:999px;border:2px solid var(--ink-soft);background:var(--card);font-size:18px;font-weight:700;color:var(--ink)}
+.composer{display:flex;gap:8px;margin-top:8px}
+.composer input{flex:1;min-width:0;min-height:56px;border-radius:16px;border:2px solid var(--ink-soft);background:var(--card);color:var(--text);padding:0 14px;font-size:20px;font-family:inherit}
+.composer button{width:56px;min-height:56px;border-radius:16px;border:0;background:var(--primary);color:var(--on-primary);display:flex;align-items:center;justify-content:center}
+
+/* check-in */
+.stepper{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0}
+.stepper button{width:72px;height:72px;border-radius:20px;border:2px solid var(--ink);background:var(--card);color:var(--ink);display:flex;align-items:center;justify-content:center}
+.stepper .num{font-family:Fraunces,Georgia,serif;font-size:56px;font-weight:600;line-height:1;text-align:center}
+.stepper .num small{display:block;font-family:'Atkinson Hyperlegible',sans-serif;font-size:18px;color:var(--muted);margin-top:4px}
+.tog{min-height:56px;padding:8px 16px;border-radius:16px;border:2px solid var(--line);background:var(--card);font-size:19px;font-weight:700;display:inline-flex;align-items:center;gap:8px;color:var(--text)}
+.tog[aria-pressed=true]{background:var(--primary);color:var(--on-primary);border-color:var(--primary)}
+.result{border-radius:22px;padding:20px;margin:16px 0}
+.result.green{background:var(--sage-bg);color:var(--sage-fg);border:3px solid var(--sage)}
+.result.yellow{background:var(--amber-bg);color:var(--amber-fg);border:3px solid var(--amber)}
+.field{width:100%;min-height:56px;border-radius:16px;border:2px solid var(--ink-soft);background:var(--card);color:var(--text);font-size:20px;padding:0 14px;font-family:inherit;margin:8px 0}
+.opt{display:block;width:100%;text-align:start;min-height:60px;margin:10px 0;border-radius:16px;border:2px solid var(--line);background:var(--card);font-size:20px;padding:10px 16px;font-weight:700;color:var(--text)}
+.opt.ok{background:var(--sage-bg);border-color:var(--sage);color:var(--sage-fg)}
+.opt.bad{background:var(--red-bg);border-color:var(--red);color:var(--red-fg)}
+
+/* tabs / overlays */
+.now{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--ink);color:var(--paper);font-weight:700;font-size:17px}
+.now .bar{flex:1;height:8px;background:rgba(255,255,255,.3);border-radius:8px;overflow:hidden}
+.now .bar i{display:block;height:100%;width:0;background:var(--paper)}
+.now button{min-height:44px;border-radius:12px;border:2px solid currentColor;background:transparent;color:inherit;padding:4px 12px;font-weight:700;font-size:16px;display:inline-flex;gap:6px;align-items:center}
+.tabs{display:flex;gap:2px;border-top:1px solid var(--line);background:var(--card);padding:6px 6px calc(6px + env(safe-area-inset-bottom))}
+.tabs button{flex:1;min-width:0;min-height:60px;border:0;background:none;color:var(--muted);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:15px;font-weight:700;border-radius:14px;padding:4px 0}
+.tabs button.on{background:var(--sage-bg);color:var(--ink)}
+.overlay{position:absolute;inset:0;z-index:30;display:flex;flex-direction:column}
+#sos{background:var(--red-solid);color:#fff;padding:calc(28px + env(safe-area-inset-top)) 24px 28px;justify-content:center;align-items:stretch;text-align:center}
+#sos h1{font-size:38px;color:#fff;margin:12px 0}
+#sos p{font-size:22px}
+#sos .btn{background:#fff;color:#8F1D1D;min-height:84px;font-size:28px;border-radius:22px}
+#sos .back{background:transparent;color:#fff;border:2px solid #fff;margin-top:14px;font-size:20px;min-height:56px}
+#calling{background:rgba(10,15,15,.86);align-items:center;justify-content:center;padding:28px;text-align:center;color:#fff;z-index:40}
+#calling .box{background:var(--card);color:var(--text);border-radius:24px;padding:24px;width:100%}
+#navmenu{background:var(--paper);z-index:50;padding:calc(12px + env(safe-area-inset-top)) 16px 16px;overflow:auto}
+#navmenu h2{margin:8px 0 10px}
+#navmenu .grp{font-weight:700;color:var(--muted);font-size:16px;margin:14px 0 4px}
+#navmenu button.it{display:flex;width:100%;min-height:48px;align-items:center;text-align:start;border:1px solid var(--line);background:var(--card);border-radius:12px;padding:8px 12px;margin:4px 0;font-size:17px;font-weight:700;color:var(--text)}
+#navmenu .close{min-height:48px;border-radius:12px;border:2px solid var(--ink);background:transparent;color:var(--ink);font-weight:700;font-size:17px;padding:0 14px}
+.toast{position:absolute;left:16px;right:16px;bottom:96px;z-index:60;background:var(--text);color:var(--paper);padding:14px 16px;border-radius:16px;font-size:18px;font-weight:700;box-shadow:var(--shadow2)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
+@media (prefers-reduced-motion:no-preference){.screen.active{animation:fade .18s ease}@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}}
+</style>
+</head>
+<body>
+<div class="stage">
+<div class="device" id="device">
+  <div class="proto" id="proto">
+    <button type="button" data-act="menu" aria-label="Prototype navigation">
+      <svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>Prototype navigation</button>
+    <button type="button" class="demo" data-act="to" data-v="expired" aria-label="Demo only: expire this plan">DEMO ONLY</button>
+  </div>
+  <div class="top" id="top">
+    <div class="brand"><svg width="30" height="30" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M3 22c4-12 22-12 26 0" stroke="#0F4C5C" stroke-width="3" stroke-linecap="round"/><path d="M3 22h26" stroke="#4F8A62" stroke-width="3" stroke-linecap="round"/><circle cx="16" cy="10.5" r="3" fill="#C6821F"/></svg>ClearPath</div>
+    <span class="spacer"></span><span class="who" id="who"></span>
+  </div>
+
+  <main id="main">
+    <!-- OTP -->
+    <section class="screen active" id="s-otp" aria-labelledby="h-otp">
+      <h1 id="h-otp">Welcome, Eleanor.</h1>
+      <p class="lead">Your hospital sent you a secure link. Enter the 6-digit code to see your plan.</p>
+      <button type="button" class="sms" data-act="fillcode">
+        <span class="chip blue"><i data-ic="lock" data-s="18"></i>MOCK: not a real text message</span>
+        <q>RWJ: Your ClearPath code is 418-203. Expires in 15 minutes.</q>
+        <small>Tap this message to fill in the code (demo shortcut).</small>
+      </button>
+      <div class="otp" id="otp" role="group" aria-label="6-digit code"></div>
+      <div id="otpMsg" role="alert"></div>
+      <button type="button" class="btn" id="otpGo" data-act="otpgo">See my plan</button>
+      <p class="fine center" style="margin-top:16px">No code? Call your care team at (732) 555-0100.</p>
+    </section>
+
+    <section class="screen" id="s-home"></section>
+    <section class="screen" id="s-meds"></section>
+
+    <!-- TODO -->
+    <section class="screen" id="s-todo" aria-labelledby="h-todo">
+      <h1 id="h-todo">Today's to-do</h1>
+      <p class="lead">Tap each one when it is done.</p>
+      <button class="todo" type="button" aria-pressed="false" data-act="tick"><span class="box"><i data-ic="check" data-s="22"></i></span><span class="t">Weigh yourself this morning and write it down</span></button>
+      <button class="todo" type="button" aria-pressed="false" data-act="tick"><span class="box"><i data-ic="check" data-s="22"></i></span><span class="t">Eat low salt (about 2 grams of sodium)</span></button>
+      <button class="todo" type="button" aria-pressed="false" data-act="tick"><span class="box"><i data-ic="check" data-s="22"></i></span><span class="t">Take all your medicines</span></button>
+      <button class="todo" type="button" aria-pressed="false" data-act="to" data-v="checkin"><span class="box"><i data-ic="check" data-s="22"></i></span><span class="t">Do your daily check-in</span><span style="margin-inline-start:auto;color:var(--ink)"><i data-ic="chev" data-s="24"></i></span></button>
+
+      <h2 style="margin-top:28px">Your appointments</h2>
+      <div class="card appt"><div class="row top-al"><i data-ic="calendar" data-s="30"></i><div><h3>Primary care</h3><p class="lead" style="margin:0">Within about 1 week</p>
+        <p style="margin:8px 0 12px"><span class="chip amber"><i data-ic="alert" data-s="18"></i>No date yet. Call to set.</span></p></div></div>
+        <button class="btn sm ghost" type="button" data-act="call" data-v="Care team">Call to set</button></div>
+      <div class="card appt"><div class="row top-al"><i data-ic="heart" data-s="30"></i><div><h3>Cardiology (heart doctor)</h3><p class="lead" style="margin:0">Within about 1 week</p>
+        <p style="margin:8px 0 12px"><span class="chip amber"><i data-ic="alert" data-s="18"></i>No date yet. Call to set.</span></p></div></div>
+        <button class="btn sm ghost" type="button" data-act="call" data-v="Care team">Call to set</button></div>
+      <div class="card appt"><div class="row top-al"><i data-ic="drop" data-s="30"></i><div><h3>Blood test (BMP)</h3><p class="lead" style="margin:0">Before or at your first visit.</p></div></div></div>
+
+      <div class="ex2" style="margin-top:24px">Example from a different patient (Note 2): a device-care card</div>
+      <div class="card amber">
+        <div class="row top-al"><i data-ic="alert" data-s="32"></i><div><h3>Important: your stent</h3>
+        <p style="margin:8px 0 12px">You have a ureteral stent. It must be removed. Do not miss your urology visit.</p></div></div>
+        <button class="btn amber" type="button" data-act="call" data-v="Urology">Call urology to schedule</button>
+      </div>
+    </section>
+
+    <!-- HELP -->
+    <section class="screen" id="s-help" aria-labelledby="h-help">
+      <h1 id="h-help">Get help</h1>
+      <p class="lead">Two kinds of help. Pick the one that matches how you feel.</p>
+      <div class="zone yellow">
+        <div class="row"><i data-ic="phone" data-s="34"></i><span class="chip amber" style="border:2px solid var(--amber)">Call your care team</span></div>
+        <h2 style="margin-top:12px">Call your care team if you have:</h2>
+        <ul><li>Fast weight gain, or more swelling in your legs or belly</li><li>More shortness of breath (but you can rest)</li></ul>
+        <button class="btn amber" type="button" data-act="call" data-v="Care team" style="border-width:3px"><i data-ic="phone" data-s="24"></i>Call care team (732) 555-0100</button>
+      </div>
+      <div class="zone red">
+        <div class="row"><i data-ic="siren" data-s="34"></i><span class="chip red" style="border:2px solid var(--red)">Emergency — call 911</span></div>
+        <h2 style="margin-top:12px">Go to the ER or call 911 if you have:</h2>
+        <ul><li>New or worse shortness of breath, especially at rest</li><li>Chest pain or pressure</li><li>Fainting or severe dizziness</li><li>Rapidly worsening swelling</li><li>Much less urine</li><li>New confusion or severe weakness</li><li>Fever or worse cough despite the antibiotic</li></ul>
+        <button class="btn red" type="button" data-act="call" data-v="911" style="min-height:72px;font-size:24px"><i data-ic="phone" data-s="28"></i>Call 911</button>
+      </div>
+      <p class="fine">Each box has an icon, a label, and a heading. You never have to rely on color alone.</p>
+    </section>
+
+    <!-- CHAT -->
+    <section class="screen" id="s-chat" aria-labelledby="h-chat">
+      <h1 id="h-chat">Ask about your plan</h1>
+      <p class="fine">I only answer from your approved plan.</p>
+      <div class="chat" id="chat" aria-live="polite"></div>
+      <div class="chips" id="chips"></div>
+      <div class="composer"><input id="chatIn" type="text" placeholder="Type your question" aria-label="Type your question" autocomplete="off"><button type="button" data-act="send" aria-label="Send"><i data-ic="send" data-s="26"></i></button></div>
+    </section>
+
+    <!-- CHECK-IN -->
+    <section class="screen" id="s-checkin" aria-labelledby="h-ci">
+      <h1 id="h-ci">Daily check-in</h1>
+      <p class="lead">Yesterday you weighed <b>182 lb</b>. What do you weigh this morning?</p>
+      <div class="stepper">
+        <button type="button" data-act="wt" data-v="-1" aria-label="One pound less"><i data-ic="minus" data-s="34"></i></button>
+        <div class="num" aria-live="polite"><span id="wtNum">182</span><small>pounds</small></div>
+        <button type="button" data-act="wt" data-v="1" aria-label="One pound more"><i data-ic="plus" data-s="34"></i></button>
+      </div>
+      <button type="button" class="fine-link" data-act="wt4">DEMO ONLY: add 4 lb</button>
+      <h2 style="margin-top:16px">How do you feel?</h2>
+      <div class="chips" id="sym" style="gap:10px">
+        <button class="tog" type="button" aria-pressed="false" data-act="sym" data-v="breath">More short of breath</button>
+        <button class="tog" type="button" aria-pressed="false" data-act="sym" data-v="swell">More swelling</button>
+        <button class="tog" type="button" aria-pressed="false" data-act="sym" data-v="chest">Chest pain</button>
+        <button class="tog" type="button" aria-pressed="false" data-act="sym" data-v="dizzy">Dizzy</button>
+        <button class="tog" type="button" aria-pressed="true" data-act="sym" data-v="fine">Feeling fine</button>
+      </div>
+      <button type="button" class="btn" data-act="submitci" style="margin-top:12px">Submit check-in</button>
+      <div id="ciResult" role="status"></div>
+    </section>
+
+    <!-- SHARE -->
+    <section class="screen" id="s-share" aria-labelledby="h-share">
+      <h1 id="h-share">Share with family</h1>
+      <p class="lead">Invite one family member to see this plan and play the audio.</p>
+      <div class="card">
+        <label for="inv" style="font-weight:700">Family member's email</label>
+        <input id="inv" class="field" type="email" value="maria.remote@example.com">
+        <button class="btn" type="button" data-act="invite">Send invite</button>
+      </div>
+      <div id="shareState"></div>
+      <p class="fine">They see the same plan. You can remove access anytime. Their access ends on day 30, with yours.</p>
+    </section>
+
+    <!-- TEACH -->
+    <section class="screen" id="s-teach" aria-labelledby="h-teach">
+      <h1 id="h-teach">Quick check (2 questions)</h1>
+      <p class="lead">This helps make sure your plan is clear.</p>
+      <div id="quiz"></div>
+    </section>
+
+    <!-- EXPIRED -->
+    <section class="screen" id="s-expired" aria-labelledby="h-exp">
+      <div class="card gray center" style="margin-top:40px;padding:32px 22px">
+        <i data-ic="clock" data-s="56"></i>
+        <h1 id="h-exp" style="margin-top:14px">This plan has expired.</h1>
+        <p>Your plan was only kept for 30 days and has now been removed for your privacy. If you need your instructions, please call your care team at (732) 555-0100.</p>
+        <button class="btn" type="button" data-act="call" data-v="Care team"><i data-ic="phone" data-s="24"></i>Call care team</button>
+      </div>
+      <p class="fine center"><button class="fine-link" type="button" data-act="restart">DEMO ONLY: restart the prototype</button></p>
+    </section>
+  </main>
+
+  <div class="now" id="now" hidden><i data-ic="speaker" data-s="22"></i><span id="nowLbl">Playing…</span><div class="bar"><i id="nowBar"></i></div><button type="button" data-act="stopaudio"><i data-ic="stop" data-s="18"></i>Stop</button></div>
+  <nav class="tabs" id="tabs" aria-label="Main" hidden>
+    <button type="button" data-act="to" data-v="home"><i data-ic="home" data-s="26"></i>Home</button>
+    <button type="button" data-act="to" data-v="meds"><i data-ic="pill" data-s="26"></i>Medicines</button>
+    <button type="button" data-act="to" data-v="todo"><i data-ic="list" data-s="26"></i>To-do</button>
+    <button type="button" data-act="to" data-v="help"><i data-ic="life" data-s="26"></i>Help</button>
+    <button type="button" data-act="to" data-v="chat"><i data-ic="chat" data-s="26"></i>Chat</button>
+  </nav>
+
+  <!-- 911 takeover -->
+  <div class="overlay" id="sos" role="alertdialog" aria-labelledby="sosH" hidden>
+    <div><i data-ic="siren" data-s="72"></i></div>
+    <h1 id="sosH">This can be an emergency.</h1>
+    <p>Chest pain can be serious. Do not wait.</p>
+    <button class="btn" type="button" data-act="call" data-v="911"><i data-ic="phone" data-s="32"></i>Call 911 now</button>
+    <p style="margin-top:18px">Do not drive yourself.<br>Your care team has been told.</p>
+    <button class="btn back" type="button" data-act="closesos">Not an emergency? Go back</button>
+  </div>
+  <div class="overlay" id="calling" hidden role="dialog" aria-labelledby="callH">
+    <div class="box"><i data-ic="phone" data-s="44"></i><h2 id="callH" style="margin-top:8px">Calling <span id="callWho">911</span>…</h2>
+      <p class="fine">MOCK: no call is made in this prototype.</p>
+      <button class="btn" type="button" data-act="endcall">End call</button></div>
+  </div>
+  <div class="overlay" id="navmenu" hidden role="dialog" aria-label="Prototype navigation"></div>
+  <div class="toast" id="toast" hidden role="status"></div>
+</div>
+</div>
+
+<script>
+const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)];
+const IC={
+home:'<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>',
+pill:'<path d="M10.5 20.5a5 5 0 0 1-7-7l9-9a5 5 0 0 1 7 7z"/><path d="M8.5 8.5l7 7"/>',
+list:'<path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1.5 1.5L7 5M3.5 12l1.5 1.5L7 11M3.5 18l1.5 1.5L7 17"/>',
+life:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/><path d="M5.6 5.6l3.9 3.9M14.5 14.5l3.9 3.9M18.4 5.6l-3.9 3.9M9.5 14.5l-3.9 3.9"/>',
+chat:'<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
+speaker:'<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>',
+globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>',
+calendar:'<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+lock:'<rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+alert:'<path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/>',
+check:'<path d="M5 12.5l4.5 4.5L19 7"/>',
+phone:'<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>',
+siren:'<path d="M7 18v-6a5 5 0 0 1 10 0v6"/><path d="M5 18h14v3H5zM12 3v2M4.5 6l1.5 1.5M19.5 6L18 7.5"/>',
+plus:'<path d="M12 5v14M5 12h14"/>',minus:'<path d="M5 12h14"/>',
+refresh:'<path d="M20 11a8 8 0 0 0-14-4L4 9"/><path d="M4 4v5h5"/><path d="M4 13a8 8 0 0 0 14 4l2-2"/><path d="M20 20v-5h-5"/>',
+ban:'<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>',
+clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+share:'<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M19 8v6M16 11h6"/>',
+x:'<path d="M6 6l12 12M18 6L6 18"/>',chev:'<path d="M9 5l7 7-7 7"/>',
+stop:'<rect x="6" y="6" width="12" height="12" rx="2"/>',
+heart:'<path d="M12 20s-8-5-8-11a4.5 4.5 0 0 1 8-2.5A4.5 4.5 0 0 1 20 9c0 6-8 11-8 11z"/>',
+send:'<path d="M4 12l16-8-6 16-3-6z"/>',
+drop:'<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/>',
+info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>'
+};
+const ic=(n,s=24)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n]||''}</svg>`;
+const hydrate=(r=document)=>$$('i[data-ic]',r).forEach(e=>e.replaceWith(Object.assign(document.createElement('span'),{innerHTML:ic(e.dataset.ic,+e.dataset.s||24)}).firstChild));
+const PHONE='(732) 555-0100';
+
+/* ---------- translations (drug names and numbers stay identical) ---------- */
+const T={
+en:{dir:'ltr',lc:'en-US',fmt:'en-US',hello:'Hello, Eleanor.',sub:'Here is your plan from RWJ New Brunswick.',play:'Play my plan',playSub:'Listen to your whole plan out loud.',
+ left:n=>`${n} days left`,stays:d=>`Your plan stays here for 30 days. It will be removed on ${d}.`,whyH:'Why you were in the hospital',
+ why:'Your heart was weak and had extra water in it. You also had a lung infection. You are better now.',
+ todoH:'What to do today',todoS:'Weigh yourself, take your medicines, and do your check-in.',helpH:'Need help now?',helpS:'See when to call your care team or 911.',moreH:'More for you',
+ ci:'Daily check-in',sh:'Share with family',tb:'Quick check',
+ mTitle:'Your medicines',mIntro:'Three groups. Follow them every day.',bNew:'NEW — start these',bKeep:'KEEP TAKING',bStop:'STOP or HOLD',vNew:'START',vKeep:'KEEP',vStop:'STOP',listen:'Listen',
+ both1:'Do not take both. Losartan replaces lisinopril.',both2:'Do not take both. Torsemide replaces furosemide.',
+ avoid:'Avoid these: ibuprofen (Advil, Motrin), naproxen (Aleve).',
+ time:{once:'once a day',twice:'twice a day',night:'at night',twice3:'twice a day for 3 more days',four4:'four times a day for 4 more days'},
+ note:{water:'Water pill. You will pee more.',heartbp:'For your heart and blood pressure.',heartsugar:'For your heart and sugar.',finish:'Finish ALL of it, even if you feel fine.',blood:'Blood thinner. Watch for bleeding.',metf:'Keep taking it while your kidney tests stay steady.',stopL:'STOP. Losartan takes its place.',holdS:'HOLD until your next blood test.',swapw:'Water pill. It takes the place of furosemide.',metoSwap:'Takes the place of your short-acting metoprolol.',stopF:'STOP. Torsemide takes its place.',stopM:'STOP. The new metoprolol takes its place.'}},
+es:{dir:'ltr',lc:'es-ES',fmt:'es-US',hello:'Hola, Eleanor.',sub:'Este es su plan de RWJ New Brunswick.',play:'Escuchar mi plan',playSub:'Escuche todo su plan en voz alta.',
+ left:n=>`Faltan ${n} días`,stays:d=>`Su plan se queda aquí por 30 días. Se eliminará el ${d}.`,whyH:'Por qué estuvo en el hospital',
+ why:'Su corazón estaba débil y tenía agua de más. También tuvo una infección en el pulmón. Ahora está mejor.',
+ todoH:'Qué hacer hoy',todoS:'Pésese, tome sus medicinas y haga su chequeo diario.',helpH:'¿Necesita ayuda ahora?',helpS:'Vea cuándo llamar a su equipo de cuidado o al 911.',moreH:'Más para usted',
+ ci:'Chequeo diario',sh:'Compartir con la familia',tb:'Repaso rápido',
+ mTitle:'Sus medicinas',mIntro:'Tres grupos. Sígalos todos los días.',bNew:'NUEVAS — empiece a tomarlas',bKeep:'SIGA TOMANDO',bStop:'DEJE o ESPERE',vNew:'EMPIECE',vKeep:'SIGA',vStop:'DEJE',listen:'Escuchar',
+ both1:'No tome los dos. Losartan reemplaza a lisinopril.',both2:'No tome los dos. Torsemide reemplaza a furosemide.',
+ avoid:'Evite: ibuprofeno (Advil, Motrin) y naproxeno (Aleve).',
+ time:{once:'una vez al día',twice:'dos veces al día',night:'por la noche',twice3:'dos veces al día por 3 días más',four4:'cuatro veces al día por 4 días más'},
+ note:{water:'Pastilla para eliminar agua. Va a orinar más.',heartbp:'Para el corazón y la presión.',heartsugar:'Para el corazón y el azúcar.',finish:'Tómelo TODO, aunque se sienta bien.',blood:'Anticoagulante. Esté atento a cualquier sangrado.',metf:'Siga tomándolo mientras sus análisis de riñón sigan estables.',stopL:'DEJE de tomarlo. Losartan toma su lugar.',holdS:'ESPERE hasta su próximo análisis de sangre.',swapw:'Pastilla para eliminar agua. Toma el lugar de furosemide.',metoSwap:'Toma el lugar de su metoprolol de acción corta.',stopF:'DEJE de tomarlo. Torsemide toma su lugar.',stopM:'DEJE de tomarlo. El metoprolol nuevo toma su lugar.'}},
+zh:{dir:'ltr',lc:'zh-CN',fmt:'zh-CN',hello:'您好，Eleanor。',sub:'这是您来自 RWJ New Brunswick 的出院计划。',play:'播放我的计划',playSub:'大声朗读您的整个计划。',
+ left:n=>`还剩 ${n} 天`,stays:d=>`您的计划会在这里保留 30 天，并将于 ${d} 删除。`,whyH:'您为什么住院',
+ why:'您的心脏变弱了，体内有多余的水分。您还有肺部感染。现在您好多了。',
+ todoH:'今天要做的事',todoS:'称体重、吃药，并完成每日检查。',helpH:'现在需要帮助吗？',helpS:'了解何时联系护理团队或拨打 911。',moreH:'更多功能',
+ ci:'每日检查',sh:'与家人分享',tb:'快速自测',
+ mTitle:'您的药物',mIntro:'分为三组。请每天照做。',bNew:'新药——请开始服用',bKeep:'继续服用',bStop:'停药或暂停',vNew:'开始',vKeep:'继续',vStop:'停药',listen:'收听',
+ both1:'不要两种都吃。losartan 代替 lisinopril。',both2:'不要两种都吃。torsemide 代替 furosemide。',
+ avoid:'请避免：ibuprofen（Advil、Motrin）、naproxen（Aleve）。',
+ time:{once:'每天一次',twice:'每天两次',night:'晚上服用',twice3:'每天两次，再服 3 天',four4:'每天四次，再服 4 天'},
+ note:{water:'利尿药（排水药）。您会更常小便。',heartbp:'保护心脏、控制血压。',heartsugar:'保护心脏、控制血糖。',finish:'请全部吃完，即使感觉好了也要吃完。',blood:'抗凝血药（血液稀释剂）。注意是否出血。',metf:'肾功能检查保持稳定时，请继续服用。',stopL:'停药。losartan 代替它。',holdS:'暂停，等下次验血后再说。',swapw:'利尿药。它代替 furosemide。',metoSwap:'代替您原来的短效 metoprolol。',stopF:'停药。torsemide 代替它。',stopM:'停药。新的 metoprolol 代替它。'}},
+ar:{dir:'rtl',lc:'ar-SA',fmt:'ar-EG-u-nu-latn',hello:'مرحبًا يا Eleanor.',sub:'هذه خطتك من RWJ New Brunswick.',play:'استمع إلى خطتي',playSub:'استمع إلى خطتك كاملة بصوت عالٍ.',
+ left:n=>`تبقّى ${n} يومًا`,stays:d=>`تبقى خطتك هنا لمدة 30 يومًا. ستُحذف في ${d}.`,whyH:'لماذا كنت في المستشفى',
+ why:'كان قلبك ضعيفًا وبه ماء زائد. وكانت لديك أيضًا عدوى في الرئة. أنت الآن أفضل.',
+ todoH:'ما يجب فعله اليوم',todoS:'زِن نفسك، وتناول أدويتك، وأكمل الفحص اليومي.',helpH:'هل تحتاج إلى مساعدة الآن؟',helpS:'اعرف متى تتصل بفريق الرعاية أو بالرقم 911.',moreH:'المزيد',
+ ci:'الفحص اليومي',sh:'المشاركة مع العائلة',tb:'اختبار سريع',
+ mTitle:'أدويتك',mIntro:'ثلاث مجموعات. اتبعها كل يوم.',bNew:'جديد — ابدأ بتناولها',bKeep:'استمر في تناولها',bStop:'أوقف أو انتظر',vNew:'ابدأ',vKeep:'استمر',vStop:'أوقف',listen:'استمع',
+ both1:'لا تتناول الاثنين معًا. يحل Losartan محل lisinopril.',both2:'لا تتناول الاثنين معًا. يحل Torsemide محل furosemide.',
+ avoid:'تجنّب: ibuprofen (Advil, Motrin) وnaproxen (Aleve).',
+ time:{once:'مرة واحدة يوميًا',twice:'مرتان يوميًا',night:'في المساء',twice3:'مرتان يوميًا لمدة 3 أيام أخرى',four4:'أربع مرات يوميًا لمدة 4 أيام أخرى'},
+ note:{water:'حبة مدرّة للبول. ستتبوّل أكثر.',heartbp:'للقلب وضغط الدم.',heartsugar:'للقلب والسكر.',finish:'أكملها كلها حتى لو شعرت أنك بخير.',blood:'مميّع للدم. انتبه لأي نزيف.',metf:'استمر في تناوله ما دامت فحوص الكلى مستقرة.',stopL:'أوقفه. يحل losartan محله.',holdS:'انتظر حتى فحص الدم القادم.',swapw:'حبة مدرّة للبول. يحل محل furosemide.',metoSwap:'يحل محل metoprolol قصير المفعول.',stopF:'أوقفه. يحل torsemide محله.',stopM:'أوقفه. يحل metoprolol الجديد محله.'}}
+};
+const MEDS1={
+ new:[['Furosemide','40 mg','once','water'],['Losartan','25 mg','once','heartbp','both1'],['Empagliflozin','10 mg','once','heartsugar'],['Amoxicillin-clavulanate','875/125 mg','twice3','finish']],
+ keep:[['Metoprolol succinate','50 mg','once',''],['Apixaban','5 mg','twice','blood'],['Atorvastatin','40 mg','night',''],['Metformin','500 mg','twice','metf']],
+ stop:[['Lisinopril','','','stopL','both1'],['Spironolactone','','','holdS']]};
+const MEDS3={
+ new:[['Torsemide','20 mg','once','swapw','both2'],['Metoprolol succinate','75 mg','once','metoSwap'],['Cephalexin','500 mg','four4','finish'],['Empagliflozin','10 mg','once','heartsugar']],
+ keep:[['Apixaban','5 mg','twice','blood']],
+ stop:[['Furosemide','','','stopF','both2'],['Metoprolol (short-acting)','','','stopM']]};
+
+const S={lang:'en',screen:'otp',note3:false,tries:5,wt:182,sym:new Set(['fine']),done:{},shared:false};
+const expDate=()=>new Date(Date.now()+27*864e5).toLocaleDateString(T[S.lang].fmt,{year:'numeric',month:'long',day:'numeric'});
+
+/* ---------- toast / audio ---------- */
+let toastT;function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,3200)}
+let barT;
+function stopAudio(){if('speechSynthesis' in window)speechSynthesis.cancel();clearInterval(barT);$('#now').hidden=true}
+function speak(text,label){
+  if(!('speechSynthesis' in window)){toast('Audio is not supported on this device. You can still read your plan on screen.');return}
+  stopAudio();
+  const u=new SpeechSynthesisUtterance(text);u.lang=T[S.lang].lc;u.rate=.88;
+  u.onend=u.onerror=()=>{clearInterval(barT);$('#now').hidden=true};
+  $('#nowLbl').textContent=label;$('#now').hidden=false;
+  const total=Math.max(4000,text.length*70),t0=Date.now();$('#nowBar').style.width='0%';
+  barT=setInterval(()=>{$('#nowBar').style.width=Math.min(100,(Date.now()-t0)/total*100)+'%'},250);
+  speechSynthesis.speak(u);
+}
+function medText(list){const t=T[S.lang];return list.map(m=>[m[0],m[1],m[2]?t.time[m[2]]:'',m[3]?t.note[m[3]]:''].filter(Boolean).join(', ')).join('. ')}
+function planText(){const t=T[S.lang],D=S.note3?MEDS3:MEDS1;return [t.why,t.bNew+'. '+medText(D.new),t.bKeep+'. '+medText(D.keep),t.bStop+'. '+medText(D.stop)].join(' ')}
+
+/* ---------- renderers ---------- */
+function applyLang(el){const t=T[S.lang];el.dir=t.dir;el.lang=S.lang;el.classList.toggle('lang-zh',S.lang==='zh');el.classList.toggle('lang-ar',S.lang==='ar')}
+function langBar(){return `<div class="langbar" role="group" aria-label="Language">${[['en','English'],['es','Español'],['zh','中文'],['ar','العربية']].map(([k,l])=>`<button type="button" class="pill ${S.lang===k?'on':''}" data-act="lang" data-v="${k}" aria-pressed="${S.lang===k}">${ic('globe',22)}<span lang="${k}">${l}</span></button>`).join('')}</div>`}
+function renderHome(){
+  const t=T[S.lang],el=$('#s-home');applyLang(el);
+  const C=2*Math.PI*38,off=C*(1-27/30);
+  el.innerHTML=`<h1>${t.hello}</h1><p class="lead">${t.sub}</p>
+  <button type="button" class="btn big" data-act="playall">${ic('speaker',30)}<span>${t.play}</span></button>
+  <p class="fine center" style="margin-top:8px">${t.playSub}</p>
+  ${langBar()}
+  <div class="card sage count"><div class="ring" role="img" aria-label="27 of 30 days left"><svg width="92" height="92" viewBox="0 0 92 92"><circle cx="46" cy="46" r="38" fill="none" stroke="currentColor" stroke-opacity=".2" stroke-width="9"/><circle cx="46" cy="46" r="38" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"/></svg><b>27</b></div>
+    <div><h2 style="margin:0">${t.left(27)}</h2><p style="margin:6px 0 0;font-size:18px">${t.stays(expDate())}</p></div></div>
+  <div class="card"><h2>${t.whyH}</h2><p style="margin:0">${t.why}</p></div>
+  <button type="button" class="linkcard" data-act="to" data-v="todo">${ic('list',30)}<span><b>${t.todoH}</b><small>${t.todoS}</small></span><span class="go">${ic('chev',24)}</span></button>
+  <button type="button" class="linkcard" data-act="to" data-v="help" style="border:2px solid var(--amber)">${ic('life',30)}<span><b>${t.helpH}</b><small>${t.helpS}</small></span><span class="go">${ic('chev',24)}</span></button>
+  <h2 style="margin-top:24px">${t.moreH}</h2>
+  <button type="button" class="linkcard" data-act="to" data-v="checkin">${ic('heart',28)}<span><b>${t.ci}</b></span><span class="go">${ic('chev',24)}</span></button>
+  <button type="button" class="linkcard" data-act="to" data-v="share">${ic('share',28)}<span><b>${t.sh}</b></span><span class="go">${ic('chev',24)}</span></button>
+  <button type="button" class="linkcard" data-act="to" data-v="teach">${ic('check',28)}<span><b>${t.tb}</b></span><span class="go">${ic('chev',24)}</span></button>`;
+}
+function medCard(m,t){
+  const [n,d,tm,nt,warn]=m;
+  return `<div class="med"><div class="med-name"><bdi dir="ltr">${n}</bdi>${d?` <bdi dir="ltr" class="dose">${d}</bdi>`:''}</div>
+  ${tm?`<div class="med-time">${t.time[tm]}</div>`:''}${nt?`<div class="med-note">${t.note[nt]}</div>`:''}
+  ${warn?`<div class="warn" role="note">${ic('alert',26)}<span>${t[warn]}</span></div>`:''}</div>`;
+}
+function block(kind,list,t){
+  const meta={new:['plus','vNew','bNew'],keep:['refresh','vKeep','bKeep'],stop:['ban','vStop','bStop']}[kind];
+  return `<section class="block ${kind}" aria-label="${t[meta[2]]}"><div class="block-h">${ic(meta[0],28)}<span class="verb">${t[meta[1]]}</span>
+  <button type="button" class="listen" data-act="listen" data-k="${kind}" aria-label="${t.listen}: ${t[meta[2]]}">${ic('speaker',22)}${t.listen}</button>
+  <span class="lbl">${t[meta[2]]}</span></div>${list.map(m=>medCard(m,t)).join('')}</section>`;
+}
+function renderMeds(){
+  const t=T[S.lang],D=S.note3?MEDS3:MEDS1,el=$('#s-meds');applyLang(el);
+  el.innerHTML=`<h1>${t.mTitle}</h1><p class="lead">${t.mIntro}</p>${langBar()}
+  <label class="switch" dir="ltr" lang="en"><input type="checkbox" id="n3" ${S.note3?'checked':''}> Show Note 3 example (diuretic swap)</label>
+  ${S.note3?'<div class="ex2" dir="ltr" lang="en">Second example patient (Note 3, age 81). Same app, different plan.</div>':''}
+  ${block('new',D.new,t)}${block('keep',D.keep,t)}${block('stop',D.stop,t)}
+  ${S.note3?'':`<div class="card amber">${'<div class="row top-al">'+ic('ban',28)+`<b>${t.avoid}</b></div>`}</div>`}`;
+}
+function go(n){
+  S.screen=n;
+  $$('.screen').forEach(s=>s.classList.toggle('active',s.id==='s-'+n));
+  const bare=['otp','expired'].includes(n);
+  $('#tabs').hidden=bare;$('#top').hidden=false;
+  $$('#tabs button').forEach(b=>{const on=b.dataset.v===n;b.classList.toggle('on',on);on?b.setAttribute('aria-current','page'):b.removeAttribute('aria-current')});
+  $('#who').textContent=bare?'':'Eleanor';
+  if(n==='home')renderHome();if(n==='meds')renderMeds();if(n==='chat'&&!$('#chat').children.length)chatReset();
+  if(n==='teach')quiz(0);if(n==='share')shareRender();
+  if(n!=='expired'&&n!=='otp'){}
+  $('#main').scrollTop=0;closeMenu();
+}
+
+/* ---------- OTP ---------- */
+function buildOtp(){const o=$('#otp');o.innerHTML='';for(let i=0;i<6;i++){const x=document.createElement('input');x.inputMode='numeric';x.maxLength=1;x.setAttribute('aria-label','Digit '+(i+1));
+  x.addEventListener('input',()=>{x.value=x.value.replace(/\D/g,'');if(x.value&&i<5)o.children[i+1].focus()});
+  x.addEventListener('keydown',e=>{if(e.key==='Backspace'&&!x.value&&i>0)o.children[i-1].focus();if(e.key==='Enter')otpGo()});
+  x.addEventListener('paste',e=>{const v=(e.clipboardData.getData('text')||'').replace(/\D/g,'').slice(0,6);if(v){e.preventDefault();[...v].forEach((c,k)=>o.children[k].value=c)}});
+  o.appendChild(x)}}
+function otpState(kind){
+  const m=$('#otpMsg'),dis=kind==='cool';$$('#otp input').forEach(i=>i.disabled=dis);$('#otpGo').disabled=dis;
+  if(kind==='wrong')m.innerHTML=`<div class="msg red">${ic('alert',26)}<span>That code didn't match. Please try again. (${S.tries} ${S.tries===1?'try':'tries'} left)</span></div>`;
+  else if(kind==='cool')m.innerHTML=`<div class="msg red">${ic('lock',26)}<span>Too many tries. For your safety, please wait 15 minutes, or call your care team at ${PHONE}.</span></div><button class="btn red" type="button" data-act="call" data-v="Care team">${ic('phone',24)}Call care team</button>`;
+  else m.innerHTML='';
+}
+function otpGo(){
+  const v=$$('#otp input').map(i=>i.value).join('');
+  if(v==='418203'){S.tries=5;otpState('');go('home');return}
+  S.tries=Math.max(0,S.tries-1);otpState(S.tries===0?'cool':'wrong');
+}
+
+/* ---------- chat ---------- */
+const CHIPS=['When do I take apixaban?','Can I take ibuprofen?','Can I drink alcohol?',"What's for dinner?",'I have chest pain','I feel alone'];
+function say(who,html,cls=''){const c=$('#chat');const b=document.createElement('div');b.className='bub '+who+' '+cls;b.innerHTML=html;c.appendChild(b);$('#main').scrollTop=$('#main').scrollHeight}
+function chatReset(){
+  $('#chat').innerHTML='';
+  say('bot',"Hi Eleanor. I can answer questions about your plan. I don't give new medical advice.");
+  $('#chips').innerHTML=CHIPS.map(c=>`<button type="button" class="qchip" data-act="chip">${c}</button>`).join('');
+}
+function crisis988(){
+  say('bot',`I'm really glad you told me. You deserve support right now. Please call or text <b>988</b>. It is free and open all day, every day. If you are in danger right now, call 911.<br><b>Your care team has been flagged.</b>`,'care');
+  say('bot',`<button type="button" class="btn sm" data-act="call" data-v="988">${ic('phone',22)}Call 988</button>`,'care');
+}
+function ask(q){
+  const l=q.toLowerCase();say('me',q.replace(/</g,'&lt;'));
+  setTimeout(()=>{
+    if(/hurt myself|kill myself|end my life|suicid|want to die|don'?t want to live/.test(l))crisis988();
+    else if(/chest (pain|pressure)|can'?t breathe|cannot breathe|faint|passed out|blue lips/.test(l)){$('#sos').hidden=false;say('bot','<b>This can be an emergency. Call 911 now.</b> Your care team has been told.','care')}
+    else if(/alone|lonely|sad|depress/.test(l))say('bot',`I'm sorry you're feeling this way. You are not alone. You can call or text <b>988</b> anytime to talk to someone. <b>Your care team has been told.</b>`,'care'),say('bot',`<button type="button" class="btn sm" data-act="call" data-v="988">${ic('phone',22)}Call 988</button>`,'care');
+    else if(/apixaban|blood thinner/.test(l))say('bot','Apixaban 5 mg, twice a day. It is a blood thinner. Watch for bleeding.<span class="src">From: Your medicines, KEEP TAKING</span>');
+    else if(/ibuprofen|advil|motrin|naproxen|aleve|nsaid/.test(l))say('bot','No. Your plan says avoid ibuprofen (Advil, Motrin) and naproxen (Aleve). They can hurt your heart and kidneys.<span class="src">From: Your medicines, STOP or HOLD</span>');
+    else if(/dinner|eat|food|salt|meal/.test(l))say('bot','Keep meals low salt: about 2 grams of sodium a day.<span class="src">From: Today\'s to-do</span>');
+    else say('bot',`I don't see that in your plan. Please call your care team at ${PHONE}.`);
+  },380);
+}
+
+/* ---------- check-in ---------- */
+function ciResult(kind){
+  const r=$('#ciResult');
+  if(kind==='red'){$('#sos').hidden=false;r.innerHTML=`<div class="card red"><div class="row top-al">${ic('siren',34)}<div><h2>Call 911</h2><p style="margin:0">Chest pain can be serious. Do not wait.</p></div></div><button class="btn red" type="button" data-act="call" data-v="911">${ic('phone',26)}Call 911</button></div>`}
+  else if(kind==='yellow')r.innerHTML=`<div class="result yellow"><div class="row top-al">${ic('phone',34)}<div><h2>Call your care team today</h2><p style="margin:0 0 10px">Your weight is up ${S.wt-182} lb. Please call your care team today. ${PHONE}.</p><p style="margin:0"><b>We've let your care team know.</b></p></div></div><button class="btn amber" type="button" data-act="call" data-v="Care team" style="margin-top:14px;border-width:3px">${ic('phone',24)}Call care team</button></div>`;
+  else r.innerHTML=`<div class="result green"><div class="row top-al">${ic('check',34)}<div><h2>You're on track</h2><p style="margin:0">See you tomorrow.</p></div></div></div>`;
+}
+function submitCI(){
+  const gain=S.wt-182,s=S.sym;
+  if(s.has('chest'))return ciResult('red');
+  if(gain>=3||s.has('breath')||s.has('swell')||s.has('dizzy'))return ciResult('yellow');
+  ciResult('green');
+}
+
+/* ---------- share / teach ---------- */
+function shareRender(){
+  $('#shareState').innerHTML=S.shared?`<div class="card sage"><div class="row top-al">${ic('check',30)}<div><h3>Invite sent to Maria</h3><p style="margin:4px 0 12px">She can see your plan and hear the audio.</p></div></div><button class="btn ghost" type="button" data-act="revoke">${ic('x',22)}Remove access</button></div>`:'';
+}
+const QZ=[
+ {q:'Which medicine did you STOP?',o:['Lisinopril','Metoprolol succinate','Apixaban'],a:0,fix:'You STOP lisinopril. Losartan replaces it. Do not take both.'},
+ {q:'Can you take ibuprofen?',o:['Yes','No'],a:1,fix:'Avoid ibuprofen and naproxen. They can hurt your heart and kidneys.'}];
+function quiz(i,picked){
+  const el=$('#quiz');
+  if(i>=QZ.length){el.innerHTML=`<div class="card sage center"><i data-ic="check" data-s="44"></i><h2 style="margin-top:8px">Nice work.</h2><p style="margin:0">You've got this.</p></div><button class="btn" type="button" data-act="to" data-v="home">Back to home</button>`;hydrate(el);return}
+  const z=QZ[i];
+  el.innerHTML=`<div class="card"><p class="fine" style="margin:0 0 4px">Question ${i+1} of ${QZ.length}</p><h2>${z.q}</h2>${z.o.map((o,k)=>`<button type="button" class="opt ${picked===undefined?'':k===z.a?'ok':k===picked?'bad':''}" data-act="ans" data-i="${i}" data-k="${k}" ${picked!==undefined?'disabled':''}>${o}${picked!==undefined&&k===z.a?' ✓':''}</button>`).join('')}
+  ${picked!==undefined?`<div class="card ${picked===z.a?'sage':'amber'}" style="margin:8px 0 0"><b>${picked===z.a?'Correct.':'Not quite.'}</b> ${z.fix}</div><button class="btn" type="button" data-act="next" data-i="${i+1}" style="margin-top:12px">Next</button>`:''}</div>`;
+}
+
+/* ---------- prototype menu ---------- */
+const MENU=[
+ ['Sign-in',[['OTP: start',()=>{S.tries=5;otpState('');go('otp')}],['OTP: wrong code',()=>{S.tries=2;go('otp');otpState('wrong')}],['OTP: cool-down after 5 tries',()=>{go('otp');otpState('cool')}]]],
+ ['Plan',[['Home (English)',()=>{S.lang='en';go('home')}],['Home (Español)',()=>{S.lang='es';go('home')}],['Home (中文)',()=>{S.lang='zh';go('home')}],['Home (العربية)',()=>{S.lang='ar';go('home')}],
+   ['Medicines (Note 1)',()=>{S.lang='en';S.note3=false;go('meds')}],['Medicines (Note 3 swap)',()=>{S.lang='en';S.note3=true;go('meds')}],['Medicines (Español)',()=>{S.lang='es';S.note3=false;go('meds')}],['Medicines (العربية, right-to-left)',()=>{S.lang='ar';S.note3=false;go('meds')}],
+   ['To-do and appointments',()=>go('todo')],['Get help',()=>go('help')]]],
+ ['Chat and check-in',[['Chat',()=>{chatReset();go('chat')}],['Chat: 911 emergency state',()=>{go('chat');chatReset();ask('I have chest pain')}],['Chat: loneliness and 988',()=>{go('chat');chatReset();ask('I feel alone')}],['Chat: self-harm safety reply',()=>{go('chat');chatReset();ask("I don't want to live")}],
+   ['Check-in',()=>{go('checkin');$('#ciResult').innerHTML=''}],['Check-in: green',()=>{go('checkin');S.wt=182;$('#wtNum').textContent=182;S.sym=new Set(['fine']);$$('#sym .tog').forEach(b=>b.setAttribute('aria-pressed',b.dataset.v==='fine'));ciResult('green')}],
+   ['Check-in: yellow (+4 lb)',()=>{go('checkin');S.wt=186;$('#wtNum').textContent=186;ciResult('yellow')}],['Check-in: red (chest pain)',()=>{go('checkin');ciResult('red')}]]],
+ ['More',[['Share with family',()=>go('share')],['Quick check (teach-back)',()=>go('teach')],['Plan expired',()=>go('expired')]]]];
+function openMenu(){
+  const m=$('#navmenu');
+  m.innerHTML=`<div class="row" style="justify-content:space-between"><h2 style="margin:0">Prototype navigation</h2><button class="close" type="button" data-act="closemenu">Close</button></div>`+
+   MENU.map((g,gi)=>`<div class="grp">${g[0]}</div>`+g[1].map((it,ii)=>`<button class="it" type="button" data-act="menuitem" data-g="${gi}" data-i="${ii}">${it[0]}</button>`).join('')).join('');
+  m.hidden=false;
+}
+function closeMenu(){$('#navmenu').hidden=true}
+
+/* ---------- events ---------- */
+document.addEventListener('click',e=>{
+  const a=e.target.closest('[data-act]');if(!a)return;const v=a.dataset.v,act=a.dataset.act;
+  switch(act){
+   case'menu':openMenu();break;case'closemenu':closeMenu();break;
+   case'menuitem':{const fn=MENU[+a.dataset.g][1][+a.dataset.i][1];closeMenu();fn();break}
+   case'to':stopAudio();go(v);break;
+   case'lang':S.lang=v;stopAudio();S.screen==='meds'?renderMeds():renderHome();break;
+   case'playall':speak(planText(),T[S.lang].play);break;
+   case'listen':{const t=T[S.lang],D=S.note3?MEDS3:MEDS1,k=a.dataset.k;speak(({new:t.bNew,keep:t.bKeep,stop:t.bStop})[k]+'. '+medText(D[k]),t.listen+': '+({new:t.vNew,keep:t.vKeep,stop:t.vStop})[k]);break}
+   case'stopaudio':stopAudio();break;
+   case'fillcode':[...'418203'].forEach((c,i)=>$('#otp').children[i].value=c);break;
+   case'otpgo':otpGo();break;
+   case'tick':{const p=a.getAttribute('aria-pressed')==='true';a.setAttribute('aria-pressed',!p);break}
+   case'call':$('#callWho').textContent=v;$('#calling').hidden=false;break;
+   case'endcall':$('#calling').hidden=true;break;
+   case'closesos':$('#sos').hidden=true;break;
+   case'chip':ask(a.textContent);break;
+   case'send':{const i=$('#chatIn');if(i.value.trim()){ask(i.value.trim());i.value=''}break}
+   case'wt':S.wt=Math.max(120,Math.min(260,S.wt+ +v));$('#wtNum').textContent=S.wt;break;
+   case'wt4':S.wt=186;$('#wtNum').textContent=S.wt;toast('Weight set to 186 lb (+4 lb).');break;
+   case'sym':{const p=a.getAttribute('aria-pressed')==='true';
+     if(v==='fine'){S.sym=new Set(p?[]:['fine'])}else{S.sym.delete('fine');p?S.sym.delete(v):S.sym.add(v)}
+     $$('#sym .tog').forEach(b=>b.setAttribute('aria-pressed',S.sym.has(b.dataset.v)));break}
+   case'submitci':submitCI();break;
+   case'invite':S.shared=true;shareRender();hydrate($('#shareState'));break;
+   case'revoke':S.shared=false;shareRender();toast('Access removed. Maria can no longer see the plan.');break;
+   case'ans':quiz(+a.dataset.i,+a.dataset.k);break;
+   case'next':quiz(+a.dataset.i);break;
+   case'restart':S.tries=5;S.lang='en';buildOtp();otpState('');go('otp');break;
+  }
+  if(['chip','send'].includes(act))hydrate($('#chat'));
+});
+document.addEventListener('change',e=>{if(e.target.id==='n3'){S.note3=e.target.checked;renderMeds()}});
+$('#chatIn').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('[data-act=send]').click()}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeMenu();$('#calling').hidden=true}});
+const mo=new MutationObserver(()=>{});
+buildOtp();hydrate();
+/* hydrate dynamically injected icons: renderers use inline svg via ic() already; chat/quiz use data-ic in strings */
+new MutationObserver(()=>hydrate()).observe($('#main'),{childList:true,subtree:true});
+go('otp');
+</script>
+</body>
+</html>

@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ClearPath – Provider app prototype</title>
+<!--
+USER STORIES COVERED: role-separated login incl. patient-blocked; voice record with timer + waveform + re-record + upload-retry;
+mic-denied paste fallback; paste empty-input validation; language select at input; transcription progress / edit /
+garbled-term fix / failure-retry; AI review with reading-level badge, structured sections, [NEEDS REVIEW] flags,
+medication diff = 0, side-by-side; Approve disabled until flags resolved; hard approval gate + edit-after-approval reverts to
+"Needs re-approval" per language; one-click Spanish with identical drug names/numbers; back-translation mismatch that blocks
+publishing; publish confirmation with link, QR, mock OTP, exact 30-day expiry; session-timeout warning. All data is synthetic.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Fraunces:opsz,wght@9..144,500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;600&family=Noto+Sans+SC:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#FBF7F0; --card:#FFFFFF; --panel:#F4EFE6; --line:#E2DACB; --text:#231F1A; --muted:#51493F;
+  --ink:#0F4C5C; --ink-soft:#2A6B7C; --primary:#0F4C5C; --on-primary:#fff; --rail:#0F4C5C; --on-rail:#EAF4F6;
+  --sage:#4F8A62; --sage-bg:#E7F0E8; --sage-fg:#244C31;
+  --blue:#2F6DA3; --blue-bg:#E2ECF4; --blue-fg:#173F66;
+  --amber:#C6821F; --amber-bg:#FBEFD8; --amber-fg:#5E3600;
+  --red:#B22A2A; --red-bg:#F7E0DE; --red-fg:#7D1515; --red-solid:#B22A2A;
+  --gray:#8A857B; --gray-bg:#EFEAE0; --gray-fg:#3F3A32;
+  --shadow1:0 2px 8px rgba(20,20,20,.06); --shadow2:0 8px 24px rgba(20,20,20,.10); --focus:#0F4C5C;
+}
+@media (prefers-color-scheme:dark){:root{
+  --paper:#121C1B; --card:#1B2928; --panel:#172423; --line:#2D403E; --text:#F3EEE4; --muted:#CFC8BA;
+  --ink:#8ED6E4; --ink-soft:#6CC7D9; --primary:#6CC7D9; --on-primary:#08262D; --rail:#0B2F38; --on-rail:#DDF1F5;
+  --sage:#7FBF93; --sage-bg:#20392A; --sage-fg:#C9E9D2; --blue:#7FB2DE; --blue-bg:#1C3348; --blue-fg:#C7DFF4;
+  --amber:#E0A64A; --amber-bg:#3E2F10; --amber-fg:#F8DEA8; --red:#F07F78; --red-bg:#4B1F1D; --red-fg:#FFD3CE;
+  --gray:#A29D91; --gray-bg:#2A2F2D; --gray-fg:#D9D4C8; --focus:#8ED6E4;}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:var(--paper);color:var(--text);font-family:'Atkinson Hyperlegible',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:15px;line-height:1.5}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+button,input,textarea,select{font-family:inherit;font-size:inherit;color:inherit}
+button{cursor:pointer}
+h1,h2,h3{margin:0;font-weight:600}
+h1{font-family:Fraunces,Georgia,serif;font-size:26px;line-height:1.2;letter-spacing:-.01em}
+h2{font-family:Fraunces,Georgia,serif;font-size:20px;line-height:1.25}
+h3{font-size:15px}
+p{margin:0 0 10px}
+.tn{font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.ic{flex:none}
+.app{display:grid;grid-template-columns:236px 1fr;height:100vh;height:100dvh}
+.rail{background:var(--rail);color:var(--on-rail);display:flex;flex-direction:column;padding:18px 12px;gap:6px}
+.rail .brand{font-family:Fraunces,Georgia,serif;font-size:22px;font-weight:700;color:#fff;display:flex;gap:8px;align-items:center;padding:4px 8px 16px}
+.rail button.nav{display:flex;align-items:center;gap:10px;min-height:44px;padding:8px 12px;border:0;border-radius:12px;background:transparent;color:inherit;font-weight:700;text-align:left}
+.rail button.nav:hover{background:rgba(255,255,255,.1)}
+.rail button.nav.on{background:rgba(255,255,255,.18);color:#fff}
+.rail .sp{flex:1}
+.rail .proto{border:2px dashed rgba(255,255,255,.5)}
+.rail small{opacity:.8;padding:0 8px}
+.main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.topbar{display:flex;align-items:center;gap:12px;padding:12px 28px;border-bottom:1px solid var(--line);background:var(--paper)}
+.topbar .sp{flex:1}
+.role{display:inline-flex;align-items:center;gap:8px;background:var(--primary);color:var(--on-primary);padding:6px 14px;border-radius:999px;font-weight:700;font-size:13px}
+.content{flex:1;overflow:auto;padding:24px 28px 120px}
+@media (max-width:900px){.app{grid-template-columns:68px 1fr}.rail .lbl,.rail small,.rail .brand span.t{display:none}.content{padding:18px 16px 120px}.topbar{padding:10px 16px}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:var(--shadow1)}
+.card+.card{margin-top:16px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+@media (max-width:1000px){.grid2{grid-template-columns:1fr}}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:8px 18px;border-radius:12px;border:2px solid var(--primary);background:var(--primary);color:var(--on-primary);font-weight:700}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--ink-soft)}
+.btn.red{background:var(--red-solid);border-color:var(--red-solid);color:#fff}
+.btn.amber{background:var(--amber-bg);border-color:var(--amber);color:var(--amber-fg)}
+.btn.sm{min-height:34px;padding:4px 12px;font-size:13px;border-radius:10px}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;line-height:1.5;white-space:nowrap}
+.chip.gray{background:var(--gray-bg);color:var(--gray-fg)}.chip.amber{background:var(--amber-bg);color:var(--amber-fg)}
+.chip.sage{background:var(--sage-bg);color:var(--sage-fg)}.chip.red{background:var(--red-bg);color:var(--red-fg)}.chip.blue{background:var(--blue-bg);color:var(--blue-fg)}
+.banner{display:flex;gap:12px;align-items:flex-start;border-radius:14px;padding:12px 16px;margin:12px 0;font-weight:700}
+.banner.red{background:var(--red-bg);color:var(--red-fg);border:2px solid var(--red)}
+.banner.amber{background:var(--amber-bg);color:var(--amber-fg);border:2px solid var(--amber)}
+.banner.sage{background:var(--sage-bg);color:var(--sage-fg);border:2px solid var(--sage)}
+.banner.blue{background:var(--blue-bg);color:var(--blue-fg);border:2px solid var(--blue)}
+.banner .btn{margin-left:auto}
+table{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}
+th{text-align:left;font-size:13px;color:var(--muted);padding:10px 12px;border-bottom:2px solid var(--line);white-space:nowrap}
+td{padding:12px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+.scroll-x{overflow-x:auto}
+label.f{display:block;font-weight:700;margin:12px 0 4px}
+.in,.ta,select.in{width:100%;min-height:42px;border-radius:10px;border:2px solid var(--line);background:var(--card);padding:8px 12px}
+.ta{min-height:220px;line-height:1.55;resize:vertical}
+.stepper{display:flex;gap:8px;margin:0 0 20px;flex-wrap:wrap}
+.step{display:flex;align-items:center;gap:8px;padding:6px 14px 6px 8px;border-radius:999px;background:var(--gray-bg);color:var(--gray-fg);font-weight:700;font-size:13px}
+.step b{width:24px;height:24px;border-radius:50%;background:var(--card);display:flex;align-items:center;justify-content:center;font-size:12px}
+.step.on{background:var(--primary);color:var(--on-primary)}.step.on b{background:var(--on-primary);color:var(--primary)}
+.step.done{background:var(--sage-bg);color:var(--sage-fg)}
+.tabs{display:flex;gap:6px;border-bottom:2px solid var(--line);margin:0 0 16px}
+.tab{padding:10px 16px;border:0;background:none;font-weight:700;border-bottom:4px solid transparent;margin-bottom:-2px;color:var(--muted);display:inline-flex;gap:8px;align-items:center}
+.tab.on{color:var(--ink);border-bottom-color:var(--primary)}
+.badges{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 18px}
+.badge{display:inline-flex;align-items:center;gap:8px;border-radius:12px;padding:8px 14px;font-weight:700;font-size:13px}
+.srcbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;font-size:14px;line-height:1.65;white-space:pre-wrap;font-family:'Atkinson Hyperlegible',monospace}
+.pf h3{margin:14px 0 6px;font-size:14px;color:var(--muted)}
+.pfblock{border-radius:12px;padding:10px 12px;margin:8px 0;border-inline-start:6px solid var(--c)}
+.pfblock.new{--c:var(--sage);background:var(--sage-bg);color:var(--sage-fg)}
+.pfblock.keep{--c:var(--blue);background:var(--blue-bg);color:var(--blue-fg)}
+.pfblock.stop{--c:var(--red);background:var(--red-bg);color:var(--red-fg)}
+.pfblock b.hd{display:flex;gap:8px;align-items:center;margin-bottom:4px}
+.pfblock ul{margin:0;padding-left:18px}
+.zonebox{border-radius:12px;padding:10px 12px;margin:8px 0}
+.zonebox.y{background:var(--amber-bg);color:var(--amber-fg);border:2px solid var(--amber)}
+.zonebox.r{background:var(--red-bg);color:var(--red-fg);border:2px solid var(--red)}
+.zonebox ul{margin:4px 0 0;padding-left:18px}
+mark.flag{background:var(--amber-bg);color:var(--amber-fg);border:2px dashed var(--amber);border-radius:6px;padding:0 6px;font-weight:700}
+mark.garb{background:var(--amber-bg);color:var(--amber-fg);border-bottom:3px solid var(--amber);border-radius:4px;padding:0 4px;cursor:pointer;font-weight:700}
+.fixed{background:var(--sage-bg);color:var(--sage-fg);border-radius:4px;padding:0 4px;font-weight:700}
+.flagcard{border:2px solid var(--amber);background:var(--amber-bg);color:var(--amber-fg);border-radius:14px;padding:14px;margin:10px 0}
+.flagcard.done{border-color:var(--sage);background:var(--sage-bg);color:var(--sage-fg)}
+.flagcard .in{background:#fff;color:#231F1A;max-width:220px;display:inline-block;width:auto}
+.swaps{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+.swap{font-size:12px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:2px 8px}
+.swap s{color:var(--muted)}
+.actionbar{position:sticky;bottom:-100px;margin-top:20px}
+.bar{position:fixed;left:236px;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:12px 28px;display:flex;gap:12px;align-items:center;z-index:5}
+@media (max-width:900px){.bar{left:68px;padding:12px 16px}}
+.bar .sp{flex:1}
+.wave{display:flex;gap:3px;align-items:center;height:64px}
+.wave i{display:block;width:5px;border-radius:3px;background:var(--ink-soft);height:20%}
+@media (prefers-reduced-motion:no-preference){.rec .wave i{animation:w 1s ease-in-out infinite alternate}@keyframes w{from{height:12%}to{height:95%}}}
+.rec .wave i:nth-child(3n){animation-delay:.15s}.rec .wave i:nth-child(3n+1){animation-delay:.35s}.rec .wave i:nth-child(5n){animation-delay:.55s}
+.mic{width:96px;height:96px;border-radius:50%;border:0;background:var(--primary);color:var(--on-primary);display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow2)}
+.mic.rec{background:var(--red-solid);color:#fff}
+.timer{font-size:34px;font-weight:700;font-variant-numeric:tabular-nums}
+.prog{height:12px;background:var(--gray-bg);border-radius:8px;overflow:hidden}.prog i{display:block;height:100%;background:var(--sage);width:0;transition:width .3s}
+.pop{position:absolute;z-index:8;background:var(--card);border:2px solid var(--ink-soft);border-radius:12px;padding:12px;box-shadow:var(--shadow2);max-width:260px;font-size:14px}
+.tx{line-height:1.8;font-size:16px;min-height:220px;padding:16px;border:2px solid var(--line);border-radius:12px;background:var(--card);position:relative}
+.ltr{direction:ltr;unicode-bidi:isolate}
+.bt-row{display:grid;grid-template-columns:1.2fr 1.4fr 1.4fr auto;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);align-items:start}
+.bt-row:last-child{border-bottom:0}
+.diff .o{background:var(--sage-bg);color:var(--sage-fg);border-radius:8px;padding:6px 10px;margin:4px 0}
+.diff .b{background:var(--red-bg);color:var(--red-fg);border-radius:8px;padding:6px 10px;margin:4px 0}
+.tr-text{border:1px solid var(--line);border-radius:12px;padding:14px;line-height:1.7}
+.tr-text.bad{border:2px solid var(--red)}
+.tr-text .hdg{font-weight:700;margin-top:8px}
+.lang-zh{font-family:'Noto Sans SC','Atkinson Hyperlegible',sans-serif}.lang-ar{font-family:'IBM Plex Sans Arabic','Atkinson Hyperlegible',sans-serif}
+.qr{width:168px;height:168px;background:#fff;padding:10px;border-radius:12px;border:1px solid var(--line)}
+.login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.login .card{width:100%;max-width:440px;padding:32px}
+.seg{display:flex;gap:6px;margin:6px 0}
+.seg button{flex:1;min-height:42px;border-radius:10px;border:2px solid var(--line);background:var(--card);font-weight:700}
+.seg button.on{background:var(--primary);color:var(--on-primary);border-color:var(--primary)}
+.seg button.dis{background:var(--gray-bg);color:var(--gray-fg);opacity:.7}
+.modal{position:fixed;inset:0;background:rgba(10,15,15,.6);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px}
+.modal .card{max-width:460px;width:100%}
+.menu{position:fixed;left:244px;bottom:16px;width:320px;max-height:78vh;overflow:auto;background:var(--card);color:var(--text);border:2px solid var(--ink-soft);border-radius:16px;box-shadow:var(--shadow2);z-index:40;padding:10px}
+.menu .g{font-size:12px;font-weight:700;color:var(--muted);margin:10px 6px 2px}
+.menu button{display:block;width:100%;text-align:left;border:0;background:none;padding:8px 10px;border-radius:8px;font-weight:700;font-size:13px;color:var(--text)}
+.menu button:hover{background:var(--panel)}
+@media (max-width:900px){.menu{left:76px}}
+.toast{position:fixed;right:24px;top:20px;z-index:60;background:var(--sage-bg);color:var(--sage-fg);border:2px solid var(--sage);padding:12px 18px;border-radius:14px;font-weight:700;box-shadow:var(--shadow2);max-width:380px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div id="login" class="login"></div>
+<div class="app" id="app" hidden>
+  <aside class="rail" aria-label="Main navigation">
+    <div class="brand"><svg width="30" height="30" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M3 22c4-12 22-12 26 0" stroke="#fff" stroke-width="3" stroke-linecap="round"/><path d="M3 22h26" stroke="#8FD0A5" stroke-width="3" stroke-linecap="round"/><circle cx="16" cy="10.5" r="3" fill="#F0B65A"/></svg><span class="t">ClearPath</span></div>
+    <button class="nav" data-act="go" data-v="dash" id="nav-dash"><i data-ic="grid"></i><span class="lbl">Dashboard</span></button>
+    <button class="nav" data-act="go" data-v="new" id="nav-new"><i data-ic="plus"></i><span class="lbl">New discharge</span></button>
+    <span class="sp"></span>
+    <button class="nav proto" data-act="menu" aria-haspopup="true"><i data-ic="menu"></i><span class="lbl">Prototype navigation</span></button>
+    <small>Synthetic data only</small>
+  </aside>
+  <div class="main">
+    <header class="topbar"><h3 id="crumb">Discharges</h3><span class="sp"></span><span class="role"><i data-ic="user" data-s="16"></i><span id="roleTxt">Role: Nurse — Priya Nair, RN</span></span><button class="btn ghost sm" data-act="signout">Sign out</button></header>
+    <div class="content" id="view"></div>
+  </div>
+</div>
+<div id="overlay"></div>
+<div id="toastBox"></div>
+
+<script>
+const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)];
+const IC={
+grid:'<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
+plus:'<path d="M12 5v14M5 12h14"/>',menu:'<path d="M4 7h16M4 12h16M4 17h16"/>',
+user:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+mic:'<rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+micoff:'<path d="M3 3l18 18"/><path d="M9 9v2a3 3 0 0 0 5 2M15 9V6a3 3 0 0 0-6 0"/><path d="M5 11a7 7 0 0 0 11 5.5M12 18v3"/>',
+check:'<path d="M5 12.5l4.5 4.5L19 7"/>',alert:'<path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/>',
+globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>',
+shield:'<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5L15.5 10"/>',
+eye:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+pencil:'<path d="M4 20l1-4L16 5l3 3L8 19z"/>',refresh:'<path d="M20 11a8 8 0 0 0-14-4L4 9"/><path d="M4 4v5h5"/><path d="M4 13a8 8 0 0 0 14 4l2-2"/><path d="M20 20v-5h-5"/>',
+clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',lock:'<rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+x:'<path d="M6 6l12 12M18 6L6 18"/>',copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
+stop:'<rect x="6" y="6" width="12" height="12" rx="2"/>',send:'<path d="M4 12l16-8-6 16-3-6z"/>',
+chev:'<path d="M9 5l7 7-7 7"/>',upload:'<path d="M12 16V4M7 9l5-5 5 5M4 20h16"/>',list:'<path d="M9 6h11M9 12h11M9 18h11M4 6h.5M4 12h.5M4 18h.5"/>'
+};
+const ic=(n,s=18)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n]||''}</svg>`;
+const hy=(r=document)=>$$('i[data-ic]',r).forEach(e=>{const t=document.createElement('span');t.innerHTML=ic(e.dataset.ic,+e.dataset.s||18);e.replaceWith(t.firstChild)});
+
+const SRC=`72-year-old male. Admission dx: acute hypoxic respiratory failure due to acute on chronic systolic HF (EF 30%) and CAP.
+D/C dx: ADHF HFrEF; RLL pneumonia; AKI, improved; HTN; T2DM; chronic AF; chronic anemia.
+
+NEW MEDS
+- furosemide 40 mg PO daily for volume management
+- losartan 25 mg PO daily for HF / BP control
+- empagliflozin 10 mg PO daily for HF / DM
+- amoxicillin-clavulanate 875/125 mg PO BID x 3 additional days to complete CAP treatment
+
+CONTINUE
+- metoprolol succinate 50 mg daily
+- apixaban 5 mg BID
+- atorvastatin 40 mg nightly
+- metformin 500 mg BID, provided renal function remains stable
+
+STOPPED / HELD
+- lisinopril d/c'd, changed to losartan
+- spironolactone held pending repeat renal function and K
+- avoid NSAIDs (HF, recent AKI)
+
+INSTRUCTIONS
+2 g Na diet. Daily weights, same time each AM. Keep written log of weight and symptoms. Follow fluid recs per HF team. Complete abx course. Obtain BMP before or at early f/u. F/u PCP and cardiology within ~1 wk.
+
+RETURN PRECAUTIONS
+New or worsening dyspnea esp. at rest; chest pain/pressure; syncope or severe dizziness; rapidly worsening LE/abdominal edema; significant decrease in UOP; new confusion or severe weakness; fever or worsening cough despite abx. Contact HF team for rapid weight gain or worsening edema/dyspnea per individualized weight-management plan.`;
+const SPOKEN=`Okay, discharge instructions for the seventy-two-year-old with heart failure and pneumonia. New medicines: furosemide forty milligrams once a day, losartan twenty-five milligrams once a day, empagliflozin ten milligrams once a day, and amoxicillin-clavulanate eight seventy-five slash one twenty-five twice a day for three more days. Continue <G> fifty milligrams once a day, apixaban five milligrams twice a day, atorvastatin forty milligrams at night, and metformin five hundred milligrams twice a day if kidney function stays stable. Stop lisinopril, it's replaced by losartan. Hold spironolactone until the repeat labs. Avoid NSAIDs. Two gram sodium diet, weigh every morning, keep a log, follow the fluid plan, finish the antibiotic, BMP at the first visit, primary care and cardiology in about one week.`;
+
+const P={role:'Nurse',approved:false,edited:false,editMode:false,thr:null,fluid:null,fluidVal:'',fluidAdd:false,tab:'es',
+  es:{t:false,fixed:false,pub:false},zh:{t:false,pub:false},ar:{t:false,pub:false},
+  langs:{en:true,es:true,zh:false,ar:false},rec:'idle',sec:0,paste:SRC,pasteErr:false,garbFixed:false,tp:'ready',tpPct:0,published:false,view:'dash',upErr:false,micBlocked:false,mode:'record'};
+let timer,tpTimer;
+const status=()=>P.published&&!P.edited?'Approved':(P.approved&&!P.edited)?'Approved':P.edited?'Needs re-approval':'Needs review';
+const chipH=s=>{const [c,i]={'Draft':['gray','pencil'],'Needs review':['amber','eye'],'Approved':['sage','check'],'Needs re-approval':['amber','refresh'],'Expired':['gray','clock']}[s];return `<span class="chip ${c}">${ic(i,14)}${s}</span>`};
+function toast(m){const b=$('#toastBox');b.innerHTML=`<div class="toast" role="status">${m}</div>`;clearTimeout(toast.t);toast.t=setTimeout(()=>b.innerHTML='',3600)}
+const fmtD=(d,o)=>d.toLocaleString('en-US',o);
+
+/* ---------- login ---------- */
+function renderLogin(state){
+  $('#app').hidden=true;$('#login').hidden=false;
+  $('#login').innerHTML=`<div class="card"><div style="font-family:Fraunces,Georgia,serif;font-size:24px;font-weight:700;color:var(--ink);display:flex;gap:8px;align-items:center"><svg width="30" height="30" viewBox="0 0 32 32" fill="none"><path d="M3 22c4-12 22-12 26 0" stroke="#0F4C5C" stroke-width="3" stroke-linecap="round"/><path d="M3 22h26" stroke="#4F8A62" stroke-width="3" stroke-linecap="round"/><circle cx="16" cy="10.5" r="3" fill="#C6821F"/></svg>ClearPath</div>
+  <h1 style="margin:18px 0 6px">Provider sign-in</h1><p class="muted">For clinical staff at RWJ New Brunswick.</p>
+  ${state==='bad'?`<div class="banner red" role="alert">${ic('alert',20)}<span>Email or password not recognized.</span></div>`:''}
+  ${state==='patient'?`<div class="banner red" role="alert">${ic('lock',20)}<span>Access denied. This portal is for clinical staff. Patients receive a secure mobile link.</span></div>`:''}
+  <label class="f" for="em">Email</label><input id="em" class="in" value="priya.nair@rwjbh.example" autocomplete="off">
+  <label class="f" for="pw">Password</label><input id="pw" class="in" type="password" value="${state==='bad'?'wrong':'correct-horse-battery'}">
+  <label class="f">Role</label>
+  <div class="seg" role="group" aria-label="Role"><button class="${P.role==='Nurse'?'on':''}" data-act="role" data-v="Nurse">Nurse</button><button class="${P.role==='Hospitalist'?'on':''}" data-act="role" data-v="Hospitalist">Hospitalist</button><button class="dis ${P.role==='Patient'?'on':''}" data-act="role" data-v="Patient" aria-label="Patient (not allowed in this portal)">Patient</button></div>
+  <p class="muted" style="font-size:13px">Patients use the mobile link, not this portal.</p>
+  <button class="btn" style="width:100%;margin-top:10px" data-act="signin">Sign in</button>
+  <p class="muted" style="font-size:13px;margin:14px 0 0">Prototype: any password works except "wrong". Pick Patient to see the blocked state.</p></div>`;
+}
+function signin(){
+  const pw=$('#pw').value;
+  if(!pw||pw==='wrong')return renderLogin('bad');
+  if(P.role==='Patient')return renderLogin('patient');
+  $('#login').hidden=true;$('#app').hidden=false;
+  $('#roleTxt').textContent=P.role==='Nurse'?'Role: Nurse — Priya Nair, RN':'Role: Hospitalist — Dr. Alan Lee, MD';
+  go('dash');
+}
+
+/* ---------- shell ---------- */
+const STEPS=['Capture','Transcript','Review','Translate','Publish'],STEPMAP={capture:0,transcript:1,review:2,translate:3,publish:4};
+function stepper(cur){return `<div class="stepper" role="list" aria-label="Discharge steps">${STEPS.map((s,i)=>`<div role="listitem" class="step ${i===cur?'on':i<cur?'done':''}" ${i===cur?'aria-current="step"':''}><b>${i<cur?ic('check',14):i+1}</b>${s}</div>`).join('')}</div>`}
+function go(v){
+  P.view=v;closeMenu();clearInterval(timer);clearInterval(tpTimer);
+  $('#nav-dash').classList.toggle('on',v==='dash');$('#nav-new').classList.toggle('on',v==='new');
+  const crumbs={dash:'Discharges',new:'New discharge',capture:'New discharge · Capture',transcript:'New discharge · Transcript',review:'New discharge · Review',translate:'New discharge · Translate',publish:'New discharge · Publish'};
+  $('#crumb').textContent=crumbs[v]||'';
+  const R={dash:rDash,new:rNew,capture:rCapture,transcript:rTranscript,review:rReview,translate:rTranslate,publish:rPublish}[v];
+  $('#view').innerHTML=R();hy($('#view'));$('.content').scrollTop=0;
+  if(v==='capture'&&P.rec==='recording')startTimer();
+  if(v==='transcript'&&P.tp==='progress')runProgress();
+}
+
+/* ---------- dashboard ---------- */
+function rDash(){
+  const rows=[['Eleanor Okafor','00-421-889','Heart failure (reduced EF)','EN, ES',status(),'Today 10:12','open'],['Rosa Delgado','00-553-204','HFpEF, AFib, cellulitis','EN','Draft','Today 09:40','x'],['Walter Brennan','00-118-337','Kidney stone, ureteral stent','EN, ES','Approved','Yesterday','x'],['Mei Chen','00-902-551','Sepsis / UTI','EN, ZH','Expired','32 days ago','x']];
+  return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:18px"><h1>Discharges</h1><span style="flex:1"></span><button class="btn" data-act="go" data-v="new">${ic('plus',18)}New discharge</button></div>
+  <div class="card scroll-x" style="padding:6px 8px"><table><thead><tr><th>Patient</th><th>MRN</th><th>Diagnosis</th><th>Language(s)</th><th>Status</th><th>Last updated</th><th><span class="sr">Action</span></th></tr></thead><tbody>
+  ${rows.map(r=>`<tr><td><b>${r[0]}</b></td><td class="tn">${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${chipH(r[4])}</td><td class="tn">${r[5]}</td><td><button class="btn ghost sm" data-act="${r[6]==='open'?'go':'toast'}" data-v="${r[6]==='open'?'new':'Prototype: only Eleanor’s discharge is wired up.'}">Open</button></td></tr>`).join('')}
+  </tbody></table></div><p class="muted" style="margin-top:12px;font-size:13px">All names and MRNs are synthetic. “Expired” records have already been deleted.</p>`;
+}
+
+/* ---------- new ---------- */
+function rNew(){
+  return `${stepper(0)}<h1>New discharge</h1><div class="card" style="margin:16px 0"><h3 class="muted">Patient (synthetic)</h3>
+  <p style="font-size:17px;margin:6px 0 0"><b>Eleanor Okafor</b> · 72 · MRN 00-421-889</p><p class="muted" style="margin:2px 0 0">Acute on chronic heart failure (reduced EF), pneumonia, kidney injury (improving).</p></div>
+  <div class="card"><h2>Patient language</h2><p class="muted">English is always required. Choose the languages the patient needs.</p>
+  ${[['en','English','required'],['es','Spanish',''],['zh','Mandarin',''],['ar','Arabic','']].map(([k,l,r])=>`<label style="display:flex;gap:10px;align-items:center;min-height:42px;font-weight:700"><input type="checkbox" data-act="lang" data-v="${k}" ${P.langs[k]?'checked':''} ${r?'disabled':''} style="width:20px;height:20px;accent-color:var(--primary)">${ic('globe',18)}${l} ${r?'<span class="chip gray">required</span>':''}</label>`).join('')}</div>
+  <div style="margin-top:20px"><button class="btn" data-act="go" data-v="capture">Continue to capture ${ic('chev',16)}</button></div>`;
+}
+
+/* ---------- capture ---------- */
+const waveBars=(n=48)=>Array.from({length:n},(_,i)=>`<i style="height:${15+Math.abs(Math.sin(i*1.3))*70}%"></i>`).join('');
+function rCapture(){
+  const tabs=`<div class="tabs" role="tablist"><button class="tab ${P.mode==='record'?'on':''}" role="tab" data-act="mode" data-v="record">${ic('mic',18)}Record voice</button><button class="tab ${P.mode==='paste'?'on':''}" role="tab" data-act="mode" data-v="paste">${ic('list',18)}Paste EMR text</button></div>`;
+  let body='';
+  if(P.mode==='record'){
+    if(P.micBlocked)body=`<div class="banner amber" role="alert">${ic('micoff',24)}<div><b>Microphone access is blocked.</b> You can paste the instructions instead.<div style="margin-top:10px"><button class="btn" data-act="mode" data-v="paste">Switch to paste text</button></div></div></div>`;
+    else{
+      const m=String(Math.floor(P.sec/60)).padStart(2,'0')+':'+String(P.sec%60).padStart(2,'0');
+      body=`<div class="card ${P.rec==='recording'?'rec':''}" style="text-align:center;padding:28px">
+       <div class="timer" id="tm" aria-live="off">${m}</div><div class="wave" style="justify-content:center;margin:12px 0">${waveBars()}</div>
+       ${P.rec==='idle'?`<button class="mic" data-act="rec" aria-label="Start recording">${ic('mic',40)}</button><p class="muted" style="margin-top:12px">Press to start. Speak the discharge instructions as you normally would.</p>`:''}
+       ${P.rec==='recording'?`<button class="btn red" data-act="stoprec">${ic('stop',16)}Stop</button><p class="muted" style="margin-top:10px">Recording… Re-recording replaces the previous take.</p>`:''}
+       ${P.rec==='done'?`<span class="chip sage">${ic('check',14)}Recording saved</span><div style="margin-top:14px;display:flex;gap:10px;justify-content:center"><button class="btn ghost" data-act="rerec">${ic('refresh',16)}Re-record</button></div><p class="muted" style="margin-top:10px">Re-recording replaces the previous take.</p>`:''}
+       ${P.upErr?`<div class="banner red" role="alert" style="text-align:left">${ic('alert',22)}<div><b>Upload failed.</b> Your audio was not lost.</div><button class="btn red sm" data-act="retryup">Retry upload</button></div>`:''}
+      </div>
+      <p style="margin-top:10px;font-size:13px" class="muted">DEMO ONLY: <button class="btn ghost sm" data-act="simUp">Simulate upload failure</button> <button class="btn ghost sm" data-act="simMic">Simulate blocked microphone</button></p>`;
+    }
+  }else{
+    body=`<label class="f" for="pt">Raw EMR discharge text</label><textarea id="pt" class="ta" style="min-height:300px">${P.paste.replace(/</g,'&lt;')}</textarea>
+    ${P.pasteErr?`<div class="banner red" role="alert">${ic('alert',20)}<span>Please paste the discharge instructions before continuing.</span></div>`:''}
+    <div style="margin-top:8px"><button class="btn ghost sm" data-act="clearpaste">Clear text</button></div>`;
+  }
+  return `${stepper(0)}<h1>Capture instructions</h1><p class="muted">Record your voice or paste text from the EMR. Language: ${Object.keys(P.langs).filter(k=>P.langs[k]).map(k=>({en:'English',es:'Spanish',zh:'Mandarin',ar:'Arabic'})[k]).join(', ')}.</p>${tabs}${body}
+  <div class="bar"><span class="sp"></span>${P.mode==='record'?`<button class="btn" data-act="proc" ${P.rec!=='done'?'disabled':''}>Transcribe</button>`:`<button class="btn" data-act="proc">Process text</button>`}</div>`;
+}
+function startTimer(){clearInterval(timer);timer=setInterval(()=>{P.sec++;const t=$('#tm');if(t)t.textContent=String(Math.floor(P.sec/60)).padStart(2,'0')+':'+String(P.sec%60).padStart(2,'0')},1000)}
+
+/* ---------- transcript ---------- */
+function rTranscript(){
+  let b='';
+  if(P.tp==='progress')b=`<div class="card"><h2>Transcribing…</h2><p class="muted"><span id="tpPct">${P.tpPct}</span>%</p><div class="prog" role="progressbar" aria-valuenow="${P.tpPct}" aria-valuemin="0" aria-valuemax="100"><i id="tpBar" style="width:${P.tpPct}%"></i></div></div>`;
+  else if(P.tp==='fail')b=`<div class="banner red" role="alert">${ic('alert',24)}<div><b>Transcription failed.</b> Nothing was sent to the AI. Try again, or paste the text instead.<div style="margin-top:10px;display:flex;gap:10px"><button class="btn" data-act="retrytp">Retry</button><button class="btn ghost" data-act="mode2paste">Paste text instead</button></div></div></div>`;
+  else{
+    const g=P.garbFixed?`<span class="fixed">metoprolol succinate</span>`:`<mark class="garb" id="garb" tabindex="0" role="button" aria-label="Possible error: met operol. Press to fix." data-act="garb">met operol</mark> <span class="muted">succinate</span>`;
+    b=`<p class="muted">Check drug names and numbers before the AI simplifies anything. Highlighted words look wrong.</p>
+    <div class="tx" id="tx" contenteditable="true" spellcheck="false" role="textbox" aria-multiline="true" aria-label="Transcript">${SPOKEN.replace('<G> fifty milligrams',g+' fifty milligrams').replace('Continue ','Continue ')}</div>
+    <div id="popHere"></div>
+    ${P.garbFixed?'':`<div class="banner amber">${ic('alert',20)}<span>1 term needs a check: “met operol”. Click it to fix.</span></div>`}
+    <div class="bar"><span class="sp"></span><button class="btn" data-act="tpnext" ${P.garbFixed?'':'disabled'}>Looks right — continue</button></div>`;
+  }
+  return `${stepper(1)}<h1>Review transcript</h1>${b}`;
+}
+function runProgress(){
+  P.tpPct=P.tpPct>=100?0:P.tpPct;clearInterval(tpTimer);
+  tpTimer=setInterval(()=>{P.tpPct=Math.min(100,P.tpPct+8);const a=$('#tpPct'),b=$('#tpBar');if(a)a.textContent=P.tpPct;if(b)b.style.width=P.tpPct+'%';if(P.tpPct>=100){clearInterval(tpTimer);P.tp='ready';go('transcript')}},280);
+}
+
+/* ---------- review ---------- */
+const flagsOk=()=>P.thr!=null&&P.fluid!=null;
+function patientPreview(){
+  const thr=P.thr!=null?`Your weight goes up ${P.thr} lb or more`:`<mark class="flag">[NEEDS REVIEW] weight-gain number</mark>`;
+  const fl=P.fluid==null?`Follow the fluid plan from your heart team. <mark class="flag">[NEEDS REVIEW] fluid limit</mark>`:P.fluid==='limit'?`Drink no more than ${P.fluidVal} a day.`:`Follow the fluid plan from your heart team.`;
+  return `<div class="pf">
+  <h3>Why you were in the hospital</h3><p id="whyP" ${P.editMode?'contenteditable="true" style="outline:2px dashed var(--amber);padding:4px;border-radius:6px"':''}>Your heart was weak and had extra water in it. You also had a lung infection. You are better now.</p>
+  <h3>Your medicines</h3>
+  <div class="pfblock new"><b class="hd">${ic('plus',16)}NEW — start these</b><ul><li><b>Furosemide 40 mg</b>, once a day. Water pill.</li><li><b>Losartan 25 mg</b>, once a day. Heart and blood pressure.</li><li><b>Empagliflozin 10 mg</b>, once a day. Heart and sugar.</li><li><b>Amoxicillin-clavulanate 875/125 mg</b>, twice a day for 3 more days. Finish ALL of it.</li></ul></div>
+  <div class="pfblock keep"><b class="hd">${ic('refresh',16)}KEEP TAKING</b><ul><li><b>Metoprolol succinate 50 mg</b>, once a day.</li><li><b>Apixaban 5 mg</b>, twice a day. Blood thinner.</li><li><b>Atorvastatin 40 mg</b>, at night.</li><li><b>Metformin 500 mg</b>, twice a day, while kidney tests stay steady.</li></ul></div>
+  <div class="pfblock stop"><b class="hd">${ic('x',16)}STOP or HOLD</b><ul><li><b>Lisinopril</b>: STOP. Losartan takes its place. <b>Do not take both.</b></li><li><b>Spironolactone</b>: HOLD until your next blood test.</li><li>Do not take pain pills like ibuprofen (Advil, Motrin) or naproxen (Aleve).</li></ul></div>
+  <h3>Daily to-do</h3><ul style="margin:0 0 6px;padding-left:18px"><li>Eat low salt (about 2 grams of sodium).</li><li>Weigh yourself every morning. Write it down.</li><li>${fl}</li><li>Finish your antibiotic.</li></ul>
+  <h3>Appointments</h3><ul style="margin:0 0 6px;padding-left:18px"><li>Primary care and cardiology: within about 1 week. No date yet.</li><li>Blood test (BMP): before or at the first visit.</li></ul>
+  <div class="zonebox y"><b>${ic('alert',16)} Call your care team if:</b><ul><li>${thr}</li><li>Your legs or belly swell more</li><li>You are more short of breath</li></ul></div>
+  <div class="zonebox r"><b>${ic('alert',16)} Go to the ER or call 911 if:</b><ul><li>New or worse shortness of breath, especially at rest</li><li>Chest pain or pressure</li><li>Fainting or severe dizziness</li><li>Swelling gets worse fast</li><li>Much less urine</li><li>New confusion or severe weakness</li><li>Fever or worse cough despite the antibiotic</li></ul></div></div>`;
+}
+function rReview(){
+  const st=status(),ok=flagsOk();
+  const fa=P.thr!=null?`<div class="flagcard done"><b>${ic('check',16)} Resolved:</b> weight-gain threshold set to <b class="tn">${P.thr} lb</b>.</div>`:
+   `<div class="flagcard"><b>[NEEDS REVIEW] weight-gain threshold missing</b><p style="margin:4px 0 8px">No exact number was given in the note.</p><label for="thr" class="f" style="margin:0 0 4px">Enter weight-gain threshold (lb)</label><input id="thr" class="in tn" type="number" min="1" max="20" placeholder="e.g. 3"> <button class="btn sm" data-act="resThr">Resolve</button></div>`;
+  const fb=P.fluid!=null?`<div class="flagcard done"><b>${ic('check',16)} Resolved:</b> ${P.fluid==='na'?'fluid limit marked not applicable.':'fluid limit set to <b>'+P.fluidVal+'</b>.'}</div>`:
+   `<div class="flagcard"><b>[NEEDS REVIEW] fluid limit not stated</b><p style="margin:4px 0 8px">The note says to follow the heart team’s fluid plan but gives no amount.</p>
+   ${P.fluidAdd?`<input id="fl" class="in" placeholder="e.g. 64 oz (2 liters)" style="margin-bottom:6px"> <button class="btn sm" data-act="resFl">Resolve</button>`:`<button class="btn ghost sm" data-act="flNa">Mark as not applicable</button> <button class="btn ghost sm" data-act="flAdd">Add limit</button>`}</div>`;
+  const meds=[['furosemide','40 mg','once a day'],['losartan','25 mg','once a day'],['empagliflozin','10 mg','once a day'],['amoxicillin-clavulanate','875/125 mg','twice a day, 3 more days'],['metoprolol succinate','50 mg','once a day'],['apixaban','5 mg','twice a day'],['atorvastatin','40 mg','at night'],['metformin','500 mg','twice a day']];
+  const bar=P.approved&&!P.edited?`<span class="chip sage">${ic('check',14)}English approved</span><span class="sp"></span><button class="btn ghost" data-act="editPlan">${ic('pencil',16)}Edit plan</button><button class="btn" data-act="go" data-v="translate">Continue to translate ${ic('chev',16)}</button>`:
+   P.edited?`<span class="muted">Re-approval needed before patients see this.</span><span class="sp"></span><button class="btn" data-act="approve">${ic('check',16)}Re-approve (English)</button>`:
+   `${ok?'':`<span class="muted">Resolve all [NEEDS REVIEW] flags first.</span>`}<span class="sp"></span><button class="btn" data-act="approve" ${ok?'':'disabled'} title="${ok?'':'Resolve all [NEEDS REVIEW] flags first'}">${ic('check',16)}Approve (English)</button>`;
+  return `${stepper(2)}<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><h1>Review before approving</h1>${chipH(st)}</div>
+  <div class="badges"><span class="badge" style="background:var(--sage-bg);color:var(--sage-fg)">${ic('check',16)}Reading level: Grade 4.8 (target ≤ 5.0)</span><span class="badge" style="background:var(--sage-bg);color:var(--sage-fg)">${ic('shield',16)}Medications vs source: 0 changes</span><span class="badge" style="background:var(--blue-bg);color:var(--blue-fg)">${ic('lock',16)}Nothing reaches the patient until you approve</span></div>
+  ${P.edited?`<div class="banner amber" role="alert">${ic('refresh',22)}<div><b>This plan changed after approval.</b> Re-approve before the patient sees updates.<div class="swaps" style="margin-top:6px"><span class="swap">English: Needs re-approval</span>${P.langs.es?'<span class="swap">Spanish: Needs re-approval</span>':''}${P.langs.zh?'<span class="swap">Mandarin: Needs re-approval</span>':''}${P.langs.ar?'<span class="swap">Arabic: Needs re-approval</span>':''}</div></div></div>`:''}
+  ${P.editMode&&!P.edited?`<div class="banner blue">${ic('pencil',20)}<span>Edit mode: change any highlighted text (for example, the “Why you were in the hospital” sentence) to see the re-approval rule.</span></div>`:''}
+  <div class="grid2"><div><h2 style="margin-bottom:8px">Clinician source</h2><div class="srcbox" lang="en">${SRC.replace(/</g,'&lt;')}</div></div>
+  <div><h2 style="margin-bottom:8px">Patient-facing (simplified)</h2><div class="card">${patientPreview()}</div></div></div>
+  <div class="card" style="margin-top:18px"><h2>Plain-language swaps</h2><div class="swaps">${[['dyspnea','shortness of breath'],['BID','twice a day'],['PO','by mouth'],['NSAIDs','pain pills like ibuprofen'],['BMP','blood test'],['syncope','fainting'],['UOP','urine'],['LE edema','leg swelling'],['abx','antibiotic']].map(([a,b])=>`<span class="swap"><s>${a}</s> → ${b}</span>`).join('')}</div>
+  <details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700;min-height:32px">Medication check: source vs simplified (8 of 8 match)</summary>
+  <div class="scroll-x"><table style="margin-top:8px"><thead><tr><th>Drug</th><th>Dose</th><th>Timing</th><th>Result</th></tr></thead><tbody>${meds.map(m=>`<tr><td>${m[0]}</td><td class="tn">${m[1]}</td><td>${m[2]}</td><td><span class="chip sage">${ic('check',14)}Identical</span></td></tr>`).join('')}</tbody></table></div></details></div>
+  <h2 style="margin:20px 0 4px">Needs your review</h2>${fa}${fb}
+  <div class="bar">${bar}</div>`;
+}
+
+/* ---------- translate ---------- */
+const ES_HTML=(fixed)=>`<div class="hdg">Por qué estuvo en el hospital</div>Su corazón estaba débil y tenía agua de más. También tuvo una infección en el pulmón. Ahora está mejor.
+<div class="hdg">NUEVAS — empiece a tomarlas</div><span class="ltr">Furosemide 40 mg</span>, una vez al día. <span class="ltr">Losartan 25 mg</span>, una vez al día. <span class="ltr">Empagliflozin 10 mg</span>, una vez al día. <span class="ltr">Amoxicillin-clavulanate 875/125 mg</span>, dos veces al día por 3 días más.
+<div class="hdg">SIGA TOMANDO</div><span class="ltr">Metoprolol succinate 50 mg</span>, una vez al día. <span class="ltr">Apixaban 5 mg</span>, dos veces al día. <span class="ltr">Atorvastatin 40 mg</span>, por la noche. <span class="ltr">Metformin 500 mg</span>, dos veces al día.
+<div class="hdg">DEJE o ESPERE</div><span class="ltr">Lisinopril</span>: DEJE de tomarlo. <span class="ltr">Spironolactone</span>: ESPERE hasta su próximo análisis de sangre.
+<div id="warnLine" style="margin-top:6px;${fixed?'':'background:var(--red-bg);color:var(--red-fg);border-radius:8px;padding:4px 8px;'}"><b>${fixed?'No tome los dos. Losartan reemplaza a lisinopril.':'Puede tomar losartan y lisinopril juntos.'}</b></div>
+<div class="hdg">Llame a su equipo de cuidado si:</div>sube de peso rápido, se hincha más o le falta más el aire.
+<div class="hdg">Vaya a emergencias o llame al 911 si:</div>le falta el aire, sobre todo en reposo; dolor o presión en el pecho; desmayo o mareo fuerte; la hinchazón empeora rápido; orina muy poco; confusión nueva o debilidad fuerte; fiebre o tos peor a pesar del antibiótico.`;
+const ZH_HTML=`<div class="hdg">您为什么住院</div>您的心脏变弱了，体内有多余的水分。您还有肺部感染。现在您好多了。
+<div class="hdg">新药——请开始服用</div><span class="ltr">Furosemide 40 mg</span>，每天一次。<span class="ltr">Losartan 25 mg</span>，每天一次。<span class="ltr">Empagliflozin 10 mg</span>，每天一次。<span class="ltr">Amoxicillin-clavulanate 875/125 mg</span>，每天两次，再服 3 天。
+<div class="hdg">继续服用</div><span class="ltr">Metoprolol succinate 50 mg</span>，每天一次。<span class="ltr">Apixaban 5 mg</span>，每天两次。<span class="ltr">Atorvastatin 40 mg</span>，晚上服用。<span class="ltr">Metformin 500 mg</span>，每天两次。
+<div class="hdg">停药或暂停</div><span class="ltr">Lisinopril</span>：停药。<span class="ltr">Spironolactone</span>：暂停，等下次验血后再说。
+<div style="margin-top:6px"><b>不要两种都吃。losartan 代替 lisinopril。</b></div>
+<div class="hdg">请联系护理团队，如果：</div>体重快速增加、肿胀加重或气短加重。
+<div class="hdg">请去急诊或拨打 911，如果：</div>呼吸困难（尤其是休息时）；胸痛或胸闷；昏厥或严重头晕；肿胀迅速加重；尿量很少；新出现意识混乱或严重虚弱；吃了抗生素仍发烧或咳嗽加重。`;
+const AR_HTML=`<div class="hdg">لماذا كنت في المستشفى</div>كان قلبك ضعيفًا وبه ماء زائد. وكانت لديك أيضًا عدوى في الرئة. أنت الآن أفضل.
+<div class="hdg">جديد — ابدأ بتناولها</div><span class="ltr">Furosemide 40 mg</span>، مرة واحدة يوميًا. <span class="ltr">Losartan 25 mg</span>، مرة واحدة يوميًا. <span class="ltr">Empagliflozin 10 mg</span>، مرة واحدة يوميًا. <span class="ltr">Amoxicillin-clavulanate 875/125 mg</span>، مرتان يوميًا لمدة 3 أيام أخرى.
+<div class="hdg">استمر في تناولها</div><span class="ltr">Metoprolol succinate 50 mg</span>، مرة واحدة يوميًا. <span class="ltr">Apixaban 5 mg</span>، مرتان يوميًا. <span class="ltr">Atorvastatin 40 mg</span>، في المساء. <span class="ltr">Metformin 500 mg</span>، مرتان يوميًا.
+<div class="hdg">أوقف أو انتظر</div><span class="ltr">Lisinopril</span>: أوقفه. <span class="ltr">Spironolactone</span>: انتظر حتى فحص الدم القادم.
+<div style="margin-top:6px"><b>لا تتناول الاثنين معًا. يحل losartan محل lisinopril.</b></div>
+<div class="hdg">اتصل بفريق الرعاية إذا:</div>زاد وزنك بسرعة أو زاد التورم أو زاد ضيق النفس.
+<div class="hdg">اذهب إلى الطوارئ أو اتصل بـ 911 إذا:</div>ضيق نفس شديد خاصة أثناء الراحة؛ ألم أو ضغط في الصدر؛ إغماء أو دوخة شديدة؛ تورم يزداد بسرعة؛ بول قليل جدًا؛ ارتباك جديد أو ضعف شديد؛ حمى أو سعال أسوأ رغم المضاد الحيوي.`;
+function rTranslate(){
+  if(!(P.approved&&!P.edited))return `${stepper(3)}<h1>Translate &amp; verify</h1><div class="banner amber">${ic('lock',22)}<div><b>English must be approved first.</b> Translations are made from the approved English plan only.<div style="margin-top:10px"><button class="btn" data-act="go" data-v="review">Go to review</button></div></div></div>`;
+  const L={es:'Spanish',zh:'Mandarin',ar:'Arabic'},t=P.tab,S=P[t];
+  const tabs=`<div class="tabs" role="tablist">${Object.keys(L).map(k=>`<button class="tab ${t===k?'on':''}" role="tab" data-act="tab" data-v="${k}">${ic('globe',16)}${L[k]} ${P[k].pub?'<span class="chip sage">Published</span>':P[k].t?(k==='es'&&!P.es.fixed?'<span class="chip red">Blocked</span>':'<span class="chip sage">Verified</span>'):''}</button>`).join('')}</div>`;
+  let body='';
+  if(!S.t)body=`<div class="card" style="text-align:center;padding:36px"><p class="muted">Drug names and numbers are kept identical. Safety-critical lines are checked by back-translation.</p><button class="btn" data-act="translate" style="margin-top:8px">${ic('globe',18)}Translate to ${L[t]} (one click)</button></div>`;
+  else{
+    const html=t==='es'?ES_HTML(P.es.fixed):t==='zh'?ZH_HTML:AR_HTML;
+    const bad=t==='es'&&!P.es.fixed;
+    const rows=[['Doses and timing (8 medicines)','furosemide 40 mg once a day; losartan 25 mg once a day; empagliflozin 10 mg once a day; … apixaban 5 mg twice a day','Same doses and timing',true],
+      ['Antibiotic length','amoxicillin-clavulanate, twice a day for 3 more days','amoxicillin-clavulanate, twice a day for 3 more days',true],
+      ['Do-not-take-both warning','Do not take both. Losartan replaces lisinopril.',bad?'You may take both losartan and lisinopril.':'Do not take both. Losartan replaces lisinopril.',!bad],
+      ['Avoid NSAIDs','Do not take ibuprofen (Advil, Motrin) or naproxen (Aleve).','Do not take ibuprofen (Advil, Motrin) or naproxen (Aleve).',true],
+      ['Call-team list (3 items)','Weight gain, more swelling, more shortness of breath','Weight gain, more swelling, more shortness of breath',true],
+      ['911 list (7 items)','Shortness of breath at rest; chest pain; fainting; fast swelling; little urine; confusion; fever or cough','Same 7 items',true]];
+    body=`<div class="grid2"><div><h2 style="margin-bottom:8px">${L[t]} patient text</h2><div class="tr-text ${bad?'bad':''} lang-${t==='es'?'es':t}" ${t==='ar'?'dir="rtl"':''} lang="${t}">${html}</div>
+     <div class="swaps" style="margin-top:8px"><span class="chip sage">${ic('check',14)}Drug names & numbers kept identical</span>${t==='ar'?'<span class="chip blue">Right-to-left layout</span>':''}${t==='zh'?'<span class="chip blue">Noto Sans SC</span>':''}</div></div>
+     <div><h2 style="margin-bottom:8px">Back-translation check</h2><div class="card" style="padding:6px 16px">
+      ${rows.map(r=>`<div class="bt-row"><div><b>${r[0]}</b></div><div class="muted" style="font-size:13px">${t==='es'||r[3]?'Original (EN): ':''}${r[1]}</div><div style="font-size:13px">Back-translated: ${r[2]}</div><div>${r[3]?`<span class="chip sage">${ic('check',14)}Match</span>`:`<span class="chip red">${ic('alert',14)}Mismatch — blocks publishing</span>`}</div></div>`).join('')}</div>
+      ${bad?`<div class="banner red" role="alert">${ic('alert',22)}<div><b>High-risk mismatch.</b> Publishing Spanish is blocked until this is fixed.
+        <div class="diff" style="margin-top:8px;font-weight:400"><div class="o"><b>Original (EN):</b> “Do not take both. Losartan replaces lisinopril.”</div><div class="b"><b>Back-translated (EN):</b> “You may take both losartan and lisinopril.”</div></div>
+        <button class="btn red sm" data-act="fixes" style="margin-top:8px">Fix translation</button></div></div>`:`<div class="banner sage">${ic('check',22)}<span>All safety-critical lines match the approved English.</span></div>`}</div></div>
+     <div class="bar"><span class="sp"></span>${S.pub?`<span class="chip sage">${ic('check',14)}${L[t]} published</span>`:`<button class="btn" data-act="pubLang" ${bad?'disabled':''} title="${bad?'Blocked: fix the mismatch first':''}">Publish ${L[t]}</button>`}<button class="btn ghost" data-act="go" data-v="publish">Continue to publish ${ic('chev',16)}</button></div>`;
+  }
+  return `${stepper(3)}<h1>Translate &amp; verify</h1><p class="muted">English is approved. Translate each language, then check the back-translation.</p>${tabs}${body}`;
+}
+
+/* ---------- publish ---------- */
+function qrSvg(){
+  const n=25;let seed=7;const r=()=>(seed=(seed*16807)%2147483647)/2147483647;let d='';
+  const corner=(x,y)=>{const cx=x<8?3:x>n-9?n-4:-1,cy=y<8?3:y>n-9?n-4:-1;if(cx<0||cy<0||(x>=8&&x<=n-9&&y>=8&&y<=n-9))return null;if(x>=8&&x<=n-9)return null;if(y>=8&&y<=n-9)return null;return Math.max(Math.abs(x-cx),Math.abs(y-cy))};
+  for(let y=0;y<n;y++)for(let x=0;x<n;x++){
+    const c=corner(x,y);let on;
+    if(c!==null)on=(c===3||c<=1);else on=r()>.52;
+    if(on)d+=`M${x} ${y}h1v1h-1z`}
+  return `<svg class="qr" viewBox="-1 -1 ${n+2} ${n+2}" role="img" aria-label="QR code placeholder"><path d="${d}" fill="#14262B"/></svg>`;
+}
+function rPublish(){
+  const now=new Date(),ex=new Date(now.getTime()+2592000*1000);
+  const dt=fmtD(ex,{month:'long',day:'numeric',year:'numeric'}),tm=fmtD(ex,{hour:'numeric',minute:'2-digit'});
+  if(!(P.approved&&!P.edited))return `${stepper(4)}<h1>Ready to publish</h1><div class="banner amber">${ic('lock',22)}<div><b>Approve the English plan first.</b> Nothing can be published without approval.<div style="margin-top:10px"><button class="btn" data-act="go" data-v="review">Go to review</button></div></div></div>`;
+  return `${stepper(4)}<h1>Ready to publish</h1>
+  <div class="grid2" style="margin-top:14px"><div class="card"><h3 class="muted">Patient link</h3>
+   <div style="display:flex;gap:8px;align-items:center;margin-top:6px"><code class="tn" style="background:var(--panel);padding:8px 12px;border-radius:10px;flex:1;word-break:break-all">https://clearpath.rwjbh.example/p/ELN-7Q2K</code><button class="btn ghost sm" data-act="toast" data-v="Link copied.">${ic('copy',14)}Copy</button></div>
+   <div style="display:flex;gap:18px;align-items:center;margin-top:16px">${qrSvg()}<div><b>Scan to open</b><p class="muted" style="font-size:13px">QR placeholder drawn in SVG.</p><p style="margin:0">Languages: <b>English</b>${P.es.pub?', <b>Spanish</b>':''}${P.zh.pub?', <b>Mandarin</b>':''}${P.ar.pub?', <b>Arabic</b>':''}</p></div></div></div>
+   <div><div class="banner blue" style="margin-top:0;flex-direction:column;gap:6px"><span class="chip blue">${ic('lock',14)}MOCK: not a real text message</span><span style="font-size:16px">RWJ: Your ClearPath code is 418-203. Expires in 15 minutes.</span></div>
+   <div class="banner amber">${ic('clock',24)}<div>This plan expires on <b>${dt}</b> at <b>${tm}</b> (exactly 30 days / 2,592,000 seconds after creation). Set by server — not editable.</div></div>
+   <div class="card" style="margin-top:12px"><span class="chip sage">${ic('check',14)}English approved</span> ${P.es.pub?'<span class="chip sage">Spanish verified</span>':P.es.t&&!P.es.fixed?'<span class="chip red">Spanish blocked</span>':''}</div></div></div>
+  <div class="bar"><span class="sp"></span>${P.published?`<span class="chip sage">${ic('check',14)}Published</span>`:`<button class="btn" data-act="publish">Publish to patient</button>`}</div>`;
+}
+
+/* ---------- overlays ---------- */
+function timeoutModal(){
+  $('#overlay').innerHTML=`<div class="modal" role="dialog" aria-modal="true" aria-labelledby="tmH"><div class="card"><div style="display:flex;gap:12px;align-items:flex-start"><span style="color:var(--amber)">${ic('alert',32)}</span><div><h2 id="tmH">Still there?</h2><p style="margin:8px 0">You've been inactive for 15 minutes. For patient safety, you'll be signed out soon.</p><p class="muted" style="font-size:13px">Unsaved review flags are preserved.</p></div></div>
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px"><button class="btn ghost" data-act="signout">Sign out</button><button class="btn" data-act="closemodal">Stay signed in</button></div></div></div>`;
+  hy($('#overlay'));$('#overlay .btn:last-child').focus();
+}
+const MENU=[
+ ['Sign-in',[['Login',()=>{renderLogin()}],['Login: invalid password',()=>renderLogin('bad')],['Login: patient role blocked',()=>{P.role='Patient';renderLogin('patient')}]]],
+ ['Capture',[['Dashboard',()=>ensure('dash')],['New discharge',()=>ensure('new')],['Record: ready',()=>{P.mode='record';P.rec='idle';P.micBlocked=false;P.upErr=false;ensure('capture')}],['Record: recording (timer + waveform)',()=>{P.mode='record';P.rec='recording';P.sec=7;P.micBlocked=false;ensure('capture')}],['Record: upload failed',()=>{P.mode='record';P.rec='done';P.upErr=true;P.micBlocked=false;ensure('capture')}],['Record: microphone blocked',()=>{P.mode='record';P.micBlocked=true;ensure('capture')}],['Paste text',()=>{P.mode='paste';P.pasteErr=false;ensure('capture')}],['Paste: empty-input error',()=>{P.mode='paste';P.paste='';P.pasteErr=true;ensure('capture')}]]],
+ ['Transcript',[['Transcribing (progress)',()=>{P.tp='progress';P.tpPct=0;ensure('transcript')}],['Transcription failed',()=>{P.tp='fail';ensure('transcript')}],['Fix “met operol”',()=>{P.tp='ready';P.garbFixed=false;ensure('transcript')}]]],
+ ['Review and approve',[['Review: flags open (Approve disabled)',()=>{reset();ensure('review')}],['Review: flags resolved',()=>{P.thr=3;P.fluid='na';P.approved=false;P.edited=false;ensure('review')}],['Review: approved',()=>{P.thr=3;P.fluid='na';P.approved=true;P.edited=false;ensure('review')}],['Review: edited after approval',()=>{P.thr=3;P.fluid='na';P.approved=true;P.edited=true;ensure('review')}]]],
+ ['Translate and publish',[['Translate: Spanish (mismatch blocks)',()=>{approveShort();P.tab='es';P.es.t=true;P.es.fixed=false;ensure('translate')}],['Translate: Mandarin',()=>{approveShort();P.tab='zh';P.zh.t=true;ensure('translate')}],['Translate: Arabic (right-to-left)',()=>{approveShort();P.tab='ar';P.ar.t=true;ensure('translate')}],['Publish confirmation',()=>{approveShort();P.es.t=true;P.es.fixed=true;P.es.pub=true;ensure('publish')}],['Session-timeout modal',()=>{if($('#app').hidden)signin();timeoutModal()}]]]];
+function approveShort(){P.thr=P.thr??3;P.fluid=P.fluid??'na';P.approved=true;P.edited=false}
+function ensure(v){if($('#app').hidden){$('#login').hidden=true;$('#app').hidden=false;P.role=P.role==='Patient'?'Nurse':P.role}go(v)}
+function reset(){Object.assign(P,{approved:false,edited:false,editMode:false,thr:null,fluid:null,fluidVal:'',fluidAdd:false})}
+function openMenu(){
+  closeMenu();const m=document.createElement('div');m.className='menu';m.id='menu';m.setAttribute('role','menu');
+  m.innerHTML=MENU.map((g,gi)=>`<div class="g">${g[0]}</div>`+g[1].map((it,ii)=>`<button role="menuitem" data-act="mi" data-g="${gi}" data-i="${ii}">${it[0]}</button>`).join('')).join('');
+  document.body.appendChild(m);
+}
+function closeMenu(){$('#menu')?.remove()}
+
+/* ---------- events ---------- */
+document.addEventListener('click',e=>{
+  const garb=e.target.closest('#garb');
+  const a=e.target.closest('[data-act]');
+  if(!a){if(!e.target.closest('.menu'))closeMenu();return}
+  const v=a.dataset.v;
+  switch(a.dataset.act){
+   case'go':go(v);break;case'menu':openMenu();break;
+   case'mi':{const fn=MENU[+a.dataset.g][1][+a.dataset.i][1];closeMenu();fn();break}
+   case'toast':toast(v);break;
+   case'role':P.role=v;renderLogin();break;
+   case'signin':signin();break;
+   case'signout':$('#overlay').innerHTML='';P.role='Nurse';renderLogin();break;
+   case'closemodal':$('#overlay').innerHTML='';break;
+   case'lang':P.langs[v]=a.checked!==undefined?a.checked:!P.langs[v];break;
+   case'mode':P.mode=v;P.pasteErr=false;go('capture');break;
+   case'mode2paste':P.mode='paste';go('capture');break;
+   case'rec':P.rec='recording';P.sec=0;P.upErr=false;go('capture');break;
+   case'stoprec':clearInterval(timer);P.rec='done';go('capture');break;
+   case'rerec':P.rec='recording';P.sec=0;P.upErr=false;go('capture');toast('Previous take replaced.');break;
+   case'simUp':P.rec='done';P.upErr=true;go('capture');break;
+   case'retryup':P.upErr=false;go('capture');toast('Upload complete.');break;
+   case'simMic':P.micBlocked=true;go('capture');break;
+   case'clearpaste':P.paste='';go('capture');break;
+   case'proc':{
+     if(P.mode==='paste'){const t=$('#pt').value.trim();if(!t){P.paste='';P.pasteErr=true;return go('capture')}P.paste=t;P.pasteErr=false;go('review')}
+     else{P.tp='progress';P.tpPct=0;go('transcript')}break}
+   case'garb':showPop();break;
+   case'applyfix':P.garbFixed=true;go('transcript');toast('Corrected to “metoprolol”.');break;
+   case'closepop':$('#popHere').innerHTML='';break;
+   case'retrytp':P.tp='progress';P.tpPct=0;go('transcript');break;
+   case'tpnext':go('review');break;
+   case'resThr':{const x=+$('#thr').value;if(!x||x<1){toast('Enter a number of pounds.');break}P.thr=x;go('review');break}
+   case'flNa':P.fluid='na';go('review');break;
+   case'flAdd':P.fluidAdd=true;go('review');break;
+   case'resFl':{const x=$('#fl').value.trim();if(!x){toast('Enter the fluid limit.');break}P.fluid='limit';P.fluidVal=x;go('review');break}
+   case'approve':P.approved=true;P.edited=false;P.editMode=false;go('review');toast('English plan approved. Patient-facing version unlocked.');break;
+   case'editPlan':P.editMode=true;go('review');break;
+   case'tab':P.tab=v;go('translate');break;
+   case'translate':{a.disabled=true;a.textContent='Translating…';setTimeout(()=>{P[P.tab].t=true;go('translate')},700);break}
+   case'fixes':P.es.fixed=true;go('translate');toast('Spanish corrected. Re-check passed.');break;
+   case'pubLang':P[P.tab].pub=true;go('translate');toast('Published.');break;
+   case'publish':P.published=true;go('publish');toast('Published. Eleanor can now open her plan.');break;
+  }
+});
+document.addEventListener('change',e=>{if(e.target.matches('input[data-act=lang]'))P.langs[e.target.dataset.v]=e.target.checked});
+document.addEventListener('input',e=>{
+  if(e.target.id==='whyP'&&P.approved&&!P.edited){P.edited=true;P.editMode=false;const keep=e.target.innerText;go('review');const w=$('#whyP');if(w)w.innerText=keep}
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){closeMenu();$('#overlay').innerHTML=''}
+  if((e.key==='Enter'||e.key===' ')&&e.target.id==='garb'){e.preventDefault();showPop()}
+});
+function showPop(){
+  const g=$('#garb');if(!g)return;const tx=$('#tx').getBoundingClientRect(),r=g.getBoundingClientRect();
+  $('#popHere').innerHTML=`<div class="pop" style="left:${Math.max(8,r.left-tx.left)}px;top:${r.bottom-tx.top+8}px"><b>Did you mean “metoprolol”?</b><p class="muted" style="margin:4px 0 8px;font-size:13px">“met operol” is not a medicine in this note.</p><button class="btn sm" data-act="applyfix">Apply fix</button> <button class="btn ghost sm" data-act="closepop">Dismiss</button></div>`;
+  $('#tx').style.position='relative';$('#tx').appendChild($('#popHere .pop'));
+}
+renderLogin();hy();
+</script>
+</body>
+</html>
