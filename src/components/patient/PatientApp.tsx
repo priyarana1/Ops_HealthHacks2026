@@ -9,6 +9,8 @@ import {
   Pill,
   ListChecks,
   ClipboardPen,
+  Lightbulb,
+  Heart,
   Download,
   X,
   MessageCircle,
@@ -380,6 +382,13 @@ function OtpScreen({ onSuccess, verify, initiallyLocked = false }: { onSuccess: 
 }
 
 /* ---------- Home ---------- */
+const RECOVERY_COPY = {
+  en: { title: "30-day recovery", dayOf: (n: number) => `Day ${n} of 30`, start: "Discharged", end: "Day 30" },
+  es: { title: "Recuperación de 30 días", dayOf: (n: number) => `Día ${n} de 30`, start: "Alta", end: "Día 30" },
+  zh: { title: "30 天康复", dayOf: (n: number) => `第 ${n} 天（共 30 天）`, start: "出院", end: "第 30 天" },
+  ar: { title: "التعافي خلال 30 يومًا", dayOf: (n: number) => `اليوم ${n} من 30`, start: "الخروج", end: "اليوم 30" },
+};
+
 function HomeScreen({
   t,
   lang,
@@ -392,8 +401,12 @@ function HomeScreen({
   go: (s: Screen) => void;
 }) {
   const data = usePatientData();
-  const C = 2 * Math.PI * 38;
-  const off = C * (1 - daysLeft / 30);
+  const recovery = RECOVERY_COPY[lang];
+  // Day 1 is the discharge day; the plan ends 30 days later.
+  const day = Math.min(30, Math.max(1, 31 - daysLeft));
+  const pct = (day / 30) * 100;
+  const endsAt = new Date(data.expiresAt), dischargeAt = new Date(endsAt.getTime() - 30 * 864e5);
+  const shortDate = (d: Date) => d.toLocaleDateString(t.localeDate, { month: "short", day: "numeric" });
   const expDate = new Date(data.expiresAt).toLocaleDateString(
     t.localeDate,
     { year: "numeric", month: "long", day: "numeric" },
@@ -402,36 +415,29 @@ function HomeScreen({
     <section>
       <h1>{t.hello.replace("Eleanor", data.firstName)}</h1>
       <p className="lead">{t.sub}</p>
-      <div className="pt-card pt-card--sage pt-count">
-        <div
-          className="pt-ring"
-          role="img"
-          aria-label={`${daysLeft} of 30 days left`}
-        >
-          <svg width="92" height="92" viewBox="0 0 92 92">
-            <circle cx="46" cy="46" r="38" fill="none" stroke="currentColor" strokeOpacity="0.2" strokeWidth="9" />
-            <circle
-              cx="46"
-              cy="46"
-              r="38"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="9"
-              strokeLinecap="round"
-              strokeDasharray={C.toFixed(1)}
-              strokeDashoffset={off.toFixed(1)}
-            />
-          </svg>
-          <b>{daysLeft}</b>
+      <section className="pt-card pt-recovery" aria-label={recovery.dayOf(day)}>
+        <div className="pt-recovery-head">
+          <span className="pt-recovery-icon"><Heart size={26} aria-hidden="true" /></span>
+          <div>
+            <p className="pt-recovery-kicker">{recovery.title}</p>
+            <h2>{recovery.dayOf(day)}</h2>
+          </div>
+          <span className="pt-recovery-left">{t.daysLeft(daysLeft)}</span>
         </div>
-        <div>
-          <h2 style={{ margin: 0 }}>{t.daysLeft(daysLeft)}</h2>
-          <p style={{ margin: "6px 0 0", fontSize: 18 }}>{t.stays(expDate)}</p>
+        <div className="pt-recovery-track" role="progressbar" aria-valuemin={1} aria-valuemax={30} aria-valuenow={day} aria-valuetext={recovery.dayOf(day)}>
+          <div className="pt-recovery-fill" style={{ width: `${pct}%` }} />
+          {[7, 14, 21].map((week) => <span key={week} className={clsx("pt-recovery-tick", day >= week && "pt-recovery-tick--passed")} style={{ insetInlineStart: `${(week / 30) * 100}%` }} aria-hidden="true" />)}
+          <span className="pt-recovery-marker" style={{ insetInlineStart: `${pct}%` }} aria-hidden="true"><Heart size={16} fill="currentColor" /></span>
         </div>
-      </div>
+        <div className="pt-recovery-ends">
+          <span>{recovery.start}<b>{shortDate(dischargeAt)}</b></span>
+          <span>{recovery.end}<b>{shortDate(endsAt)}</b></span>
+        </div>
+        <p className="pt-recovery-note">{t.stays(expDate)}</p>
+      </section>
       <div className="pt-home-actions">
-        <button className="pt-linkcard" type="button" onClick={() => go("todo")}><ListChecks size={28} aria-hidden="true" /><span><b>{ARTICLE_COPY[lang].todo}</b></span><ChevronRight size={24} className="go" aria-hidden="true" /></button>
-        <button className="pt-linkcard" type="button" onClick={() => go("checkin")}><ClipboardPen size={28} aria-hidden="true" /><span><b>{{ en: "Bring me to my questionnaire", es: "Ir a mi cuestionario", zh: "查看我的问卷", ar: "انتقل إلى استبياني" }[lang]}</b></span><ChevronRight size={24} className="go" aria-hidden="true" /></button>
+        <button className="pt-linkcard" type="button" onClick={() => go("todo")}><span className="pt-link-icon pt-link-icon--blue"><ListChecks size={26} aria-hidden="true" /></span><span><b>{ARTICLE_COPY[lang].todo}</b></span><ChevronRight size={24} className="go" aria-hidden="true" /></button>
+        <button className="pt-linkcard" type="button" onClick={() => go("checkin")}><span className="pt-link-icon pt-link-icon--sage"><ClipboardPen size={26} aria-hidden="true" /></span><span><b>{{ en: "Bring me to my questionnaire", es: "Ir a mi cuestionario", zh: "查看我的问卷", ar: "انتقل إلى استبياني" }[lang]}</b></span><ChevronRight size={24} className="go" aria-hidden="true" /></button>
       </div>
       <RecommendedTips lang={lang} />
     </section>
@@ -445,14 +451,14 @@ const ARTICLE_COPY = {
   ar: { todo: "انتقل إلى قائمة مهامي", open: "عرض المقالات الموصى بها", title: "مقالات موصى بها", intro: "تعرّف على رعاية قلبك.", external: "يفتح موقع المصدر — المقالات باللغة الإنجليزية", back: "العودة للرئيسية", titles: ["فهم قصور القلب", "تتبع الأعراض", "فهم أدويتك"] },
 };
 const TIP_COPY = {
-  en: { title: "Recommended tips", intro: "For your heart-failure recovery.", diet: "Low-salt eating", meals: "Low-sodium meals", foods: "Foods to limit and simple swaps", activity: "Physical activity with heart failure", note: "Follow your care team’s food and activity plan. Ask before starting new exercise." },
+  en: { title: "Recommended Tips", intro: "For your heart-failure recovery.", diet: "Low-salt eating", meals: "Low-sodium meals", foods: "Foods to limit and simple swaps", activity: "Physical activity with heart failure", note: "Follow your care team’s food and activity plan. Ask before starting new exercise." },
   es: { title: "Consejos recomendados", intro: "Para su recuperación de la insuficiencia cardíaca.", diet: "Comer con menos sal", meals: "Comidas bajas en sodio", foods: "Alimentos que limitar y alternativas", activity: "Actividad física con insuficiencia cardíaca", note: "Siga el plan de alimentación y actividad de su equipo. Consulte antes de comenzar un ejercicio nuevo." },
   zh: { title: "推荐建议", intro: "帮助您的心力衰竭康复。", diet: "低盐饮食", meals: "低钠食谱", foods: "需要限制的食物和替代选择", activity: "心力衰竭患者的身体活动", note: "遵循护理团队的饮食和活动计划。开始新的运动前，请先咨询。" },
   ar: { title: "نصائح موصى بها", intro: "للتعافي مع قصور القلب.", diet: "طعام قليل الملح", meals: "وجبات قليلة الصوديوم", foods: "أطعمة للحد منها وبدائل بسيطة", activity: "النشاط البدني مع قصور القلب", note: "اتبع خطة الغذاء والنشاط من فريق الرعاية. اسأل قبل بدء تمرين جديد." },
 };
 const HEART_FAILURE_TIPS = [
   { key: "meals" as const, topic: "salt", title: "Sodium-Smart Recipes", cover: "/article-covers/sodium-smart-recipes.png", source: "American Heart Association", url: "https://www.heart.org/-/media/Files/Health-Topics/Brochures/Sodium-Smart-Recipes.pdf" },
-  { key: "foods" as const, topic: "salt", title: "The Salty Six", cover: "/article-covers/salty-six.jpg", source: "American Heart Association", url: "https://www.heart.org/-/media/aha/h4gm/pdf-files/salty-six-adults-english-infographic.pdf" },
+  { key: "foods" as const, topic: "salt", title: "The Salty Six: Stay Away", cover: "/article-covers/salty-six.jpg", source: "American Heart Association", url: "https://www.heart.org/-/media/aha/h4gm/pdf-files/salty-six-adults-english-infographic.pdf" },
   { key: "activity" as const, topic: "activity", title: "Living Well with Heart Failure", cover: "/article-covers/living-with-heart-failure.png", source: "Veterans Affairs · Veterans Health Library", url: "https://www.veteranshealthlibrary.va.gov/LivingWith/HeartFailure/" },
 ];
 const READ_GUIDE = { en: "Read guide", es: "Leer guía", zh: "阅读指南", ar: "اقرأ الدليل" };
@@ -465,11 +471,11 @@ function RecommendedTips({ lang, showHeading = true }: { lang: Language; showHea
   const tips = hasHeartFailure ? HEART_FAILURE_TIPS.filter((tip) => tip.topic !== "salt" || hasLowSaltPlan) : [];
   if (!tips.length) return null;
   return <section className="pt-recommended-tips pt-reading-library" aria-label={copy.title}>
-    {showHeading && <><h2>{copy.title}</h2><p className="muted">{copy.intro}</p></>}
+    {showHeading && <><h2 className="pt-tips-title"><span className="pt-link-icon pt-link-icon--amber"><Lightbulb size={24} aria-hidden="true" /></span>{copy.title}</h2><p className="muted">{copy.intro}</p></>}
     <div className="pt-bookshelf">
       {tips.map((tip) => <a className="pt-book-card" key={tip.key} href={tip.url} target="_blank" rel="noopener noreferrer">
         <div className={clsx("pt-book-cover", `pt-book-cover--${tip.key}`)}><Image src={tip.cover} alt="" width={400} height={540} sizes="(max-width: 480px) 180px, 200px" className="pt-real-cover" /><span className="pt-book-pages" aria-hidden="true" /></div>
-        <span className="pt-book-topic">{copy[tip.key]}</span><h3>{tip.title}</h3><p className="pt-book-publisher">{tip.source}</p>
+        <h3>{tip.title}</h3><p className="pt-book-publisher">{tip.source}</p>
         <span className="pt-book-read">{READ_GUIDE[lang]}<ChevronRight size={20} aria-hidden="true" /></span>
       </a>)}
     </div>

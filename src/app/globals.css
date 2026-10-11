@@ -1855,7 +1855,35 @@ h2 { font-size: 22px; }
 .pt-dose-checkbox span { font-size: 17px; line-height: 1.5; overflow-wrap: anywhere; }
 .pt-dose-checkbox--taken span { color: var(--muted); }
 
+/* Home: 30-day recovery timeline. */
+.pt-recovery { background: linear-gradient(135deg, #eef6f0 0%, #e6f0f8 100%); border-color: transparent; padding: 22px 22px 18px; }
+.pt-recovery-head { display: flex; align-items: center; gap: 14px; }
+.pt-recovery-icon { display: grid; place-items: center; width: 50px; height: 50px; flex: none; border-radius: 50%; background: #fff; color: var(--brand-red); box-shadow: 0 2px 6px rgb(23 42 79 / 8%); }
+.pt-recovery-kicker { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--sage-fg); }
+.pt-main .pt-recovery-head h2 { margin: 2px 0 0; font-size: 28px; color: var(--ink); }
+.pt-recovery-left { margin-inline-start: auto; padding: 6px 14px; border-radius: 999px; background: #fff; color: var(--sage-fg); font-size: 17px; font-weight: 700; white-space: nowrap; }
+.pt-recovery-track { position: relative; height: 18px; margin: 26px 10px 10px; border-radius: 999px; background: rgb(255 255 255 / 85%); box-shadow: inset 0 1px 3px rgb(23 42 79 / 12%); }
+.pt-recovery-fill { position: absolute; inset-block: 0; inset-inline-start: 0; min-width: 18px; border-radius: 999px; background: linear-gradient(90deg, #6aa77c, var(--sage)); }
+.pt-recovery-tick { position: absolute; top: 4px; width: 2px; height: 10px; margin-inline-start: -1px; border-radius: 2px; background: rgb(23 42 79 / 22%); }
+.pt-recovery-tick--passed { background: rgb(255 255 255 / 70%); }
+.pt-recovery-marker { position: absolute; top: 50%; display: grid; place-items: center; width: 34px; height: 34px; transform: translate(-50%, -50%); border-radius: 50%; background: #fff; color: var(--brand-red); border: 3px solid var(--sage); box-shadow: 0 2px 6px rgb(23 42 79 / 18%); }
+[dir="rtl"] .pt-recovery-marker { transform: translate(50%, -50%); }
+.pt-recovery-ends { display: flex; justify-content: space-between; gap: 12px; font-size: 15px; color: var(--muted); }
+.pt-recovery-ends span { display: flex; flex-direction: column; }
+.pt-recovery-ends span:last-child { text-align: end; }
+.pt-recovery-ends b { font-size: 18px; color: var(--ink); }
+.pt-recovery-note { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid rgb(23 42 79 / 10%); font-size: 17px; color: var(--sage-fg); }
+@media (max-width: 420px) {
+  .pt-recovery-head { flex-wrap: wrap; }
+  .pt-recovery-left { margin-inline-start: 64px; }
+}
 .pt-home-actions { margin-top: 24px; }
+/* Coloured icon circles for home links and section titles. */
+.pt-link-icon { display: inline-grid; place-items: center; width: 48px; height: 48px; flex: none; border-radius: 50%; }
+.pt-link-icon--blue { background: var(--blue-bg); color: var(--blue); }
+.pt-link-icon--sage { background: var(--sage-bg); color: var(--sage); }
+.pt-link-icon--amber { background: #fdf0cc; color: #a8741a; }
+.pt-tips-title { display: flex; align-items: center; gap: 12px; }
 .pt-home-actions .pt-linkcard { min-height: 80px; padding: 18px; text-align: start; }
 .pt-home-actions .pt-linkcard > svg:first-child { color: var(--ink); flex-shrink: 0; }
 .pt-linkcard[href] { text-decoration: none; }
@@ -2089,3 +2117,46 @@ h2 { font-size: 22px; }
 .pt-summary-number { display: flex; align-items: center; gap: 10px; font-weight: 700; }
 .pt-checkin-summary summary { cursor: pointer; min-height: 52px; align-content: center; font-size: 18px; color: var(--primary); }
 .pt-checkin-summary details { margin-top: 12px; }
+
+/* Readability for older patients: larger text across the patient app (overrides the sizes above). */
+/* Home */
+.pt-clinical .pt-home-actions .pt-linkcard { min-height: 92px; }
+.pt-clinical .pt-home-actions .pt-linkcard b { font-size: 23px; line-height: 1.3; }
+.pt-clinical .pt-main .pt-tips-title { font-size: 27px; }
+.pt-clinical .pt-recommended-tips > p { font-size: 19px; }
+.pt-clinical .pt-book-topic { font-size: 17px; }
+.pt-clinical .pt-book-card h3 { font-size: 24px; }
+.pt-clinical .pt-book-publisher { font-size: 16px; }
+.pt-clinical .pt-book-read { font-size: 19px; min-height: 54px; }
+.pt-clinical .pt-recovery-ends { font-size: 17px; }
+.pt-clinical .pt-recovery-ends b { font-size: 20px; }
+.pt-clinical .pt-recovery-note { font-size: 18px; }
+/* Top bar and bottom tabs */
+.pt-clinical .pt-who { font-size: 16px; }
+.pt-clinical .pt-today { font-size: 15px; }
+.pt-clinical .pt-tabs button { font-size: 15px; font-weight: 600; }
+@media (max-width: 480px) { .pt-clinical .pt-tabs button { font-size: 14px; } }
+.pt-clinical .pt-main .fine { font-size: 16px; }
+/* To-do */
+.pt-clinical .pt-checklist-timing { font-size: 16px; }
+.pt-clinical .pt-priority-period > h3 > span, .pt-clinical .pt-med-taken-count { font-size: 16px; }
+.pt-clinical .pt-task-medicines { font-size: 18px; }
+.pt-clinical .pt-med-task .t small { font-size: 17px; }
+.pt-clinical .pt-dose-time { font-size: 16px; }
+/* Medicines */
+.pt-clinical .pt-dose-frequency { font-size: 18px; }
+.pt-clinical .pt-dose-value > span { font-size: 15px; }
+.pt-clinical .pt-dose-important, .pt-clinical .pt-dose-warning, .pt-clinical .pt-schedule-note { font-size: 17px; }
+.pt-clinical .pt-med-label-note { font-size: 17px; }
+.pt-clinical .pt-stopped-row p { font-size: 18px; }
+.pt-clinical .pt-med-facts { font-size: 18px; }
+.pt-clinical .pt-med-facts dt { font-size: 16px; }
+.pt-clinical .pt-demo-pill-note { font-size: 18px; }
+/* Chat & help, check-in, emergency */
+.pt-clinical .pt-chat-help > .lead { font-size: 18px; }
+.pt-clinical .pt-qchip { font-size: 17px; }
+.pt-clinical .pt-zone .cp-chip { font-size: 15px; }
+@media (max-width: 420px) { .pt-clinical .pt-mood-option { font-size: 16px; } }
+.pt-clinical .pt-emergency-label { font-size: 16px; }
+.pt-clinical .pt-sos .pt-emergency-note { font-size: 15px; }
+.pt-clinical .pt-emergency-header > span:last-child { font-size: 14px; }
