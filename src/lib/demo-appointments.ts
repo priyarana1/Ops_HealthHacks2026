@@ -10,7 +10,7 @@ const maps = (address: string) => `https://www.google.com/maps/search/?api=1&que
 const CLINICS = {
   labs: {
     pattern: /blood (test|work)|\blabs?\b|metabolic panel/i,
-    title: { en: "Blood test appointment", es: "Cita para análisis de sangre", zh: "验血预约", ar: "موعد فحص الدم" },
+    title: { en: "Blood Test Appointment", es: "Cita para análisis de sangre", zh: "验血预约", ar: "موعد فحص الدم" },
     clinic: "Labcorp at RWJBarnabas Health at George Street",
     location: "317 George Street, Suite 101, New Brunswick, NJ 08901",
     phone: "(866) 476-2522",
@@ -19,8 +19,7 @@ const CLINICS = {
   },
   primary: {
     pattern: /primary care|family (doctor|medicine)/i,
-    title: { en: "Primary care doctor appointment", es: "Cita con su médico de cabecera", zh: "家庭医生预约", ar: "موعد مع طبيب الرعاية الأولية" },
-    withHeart: { en: "Primary care doctor and heart doctor appointment", es: "Cita con su médico de cabecera y su cardiólogo", zh: "家庭医生和心脏科医生预约", ar: "موعد مع طبيب الرعاية الأولية وطبيب القلب" },
+    title: { en: "Primary Care Doctor Appointment", es: "Cita con su médico de cabecera", zh: "家庭医生预约", ar: "موعد مع طبيب الرعاية الأولية" },
     clinic: "RWJBarnabas Health Primary & Specialty Care at Old Bridge",
     location: "1980 Route 9, Old Bridge, NJ 08857",
     phone: "(848) 289-4400",
@@ -54,8 +53,7 @@ export function withScheduledAppointments(plan: PlanContent, english: PlanConten
     const [key, c] = match;
     used.add(key);
     // A short card title replaces the instruction wording; the booked time already says when.
-    const titles = "withHeart" in c && /heart|cardio/i.test(text) ? c.withHeart : c.title;
-    const type = (titles as Partial<Record<PlanLanguage, string>>)[lang] ?? titles.en;
+    const type = (c.title as Partial<Record<PlanLanguage, string>>)[lang] ?? c.title.en;
     return { ...appointment, type, scheduleNeeded: false, clinic: c.clinic, location: c.location, mapsUrl: maps(c.location), phone: c.phone, website: c.website, when: appointmentTime(dischargeAt, c.daysAfterDischarge, c.hour, c.minute, lang) };
   });
   return { ...plan, appointments };

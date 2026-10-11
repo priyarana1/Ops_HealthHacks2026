@@ -801,7 +801,7 @@ function TodoScreen({ lang, go, call, done, setDone }: { go: (screen: Screen) =>
   const content = usePlanContent(lang);
   const data = usePatientData();
   return (
-    <section aria-labelledby="h-todo">
+    <section className="pt-todo-screen" aria-labelledby="h-todo">
       <h1 id="h-todo">{CHECKLIST_COPY[lang].title}</h1>
       <p className="lead">Tap each one when it is done.</p>
       <DailyChecklist lang={lang} done={done} setDone={setDone} onCheckin={() => go("checkin")} />

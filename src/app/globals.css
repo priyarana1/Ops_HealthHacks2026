@@ -2160,3 +2160,23 @@ h2 { font-size: 22px; }
 .pt-clinical .pt-emergency-label { font-size: 16px; }
 .pt-clinical .pt-sos .pt-emergency-note { font-size: 15px; }
 .pt-clinical .pt-emergency-header > span:last-child { font-size: 14px; }
+/* To-do tab: larger text throughout. */
+.pt-clinical .pt-main .pt-todo-screen h1 { font-size: clamp(34px, 6vw, 42px); }
+.pt-clinical .pt-main .pt-todo-screen .lead { font-size: 21px; }
+.pt-clinical .pt-main .pt-todo-screen h2 { font-size: 27px; }
+.pt-todo-screen .pt-plan-heading .muted { font-size: 20px; }
+.pt-clinical .pt-todo-screen .pt-checklist-timing { font-size: 18px; }
+.pt-clinical .pt-todo-screen .pt-period-heading h3 { font-size: 25px; }
+.pt-todo-screen .pt-period-time { font-size: 19px; }
+.pt-todo-screen .pt-period-progress { font-size: 19px; }
+.pt-todo-screen .pt-daily-plan .pt-priority-task .pt-todo { font-size: 23px; min-height: 80px; }
+.pt-todo-screen .pt-priority-task .pt-task-medicines summary { font-size: 20px; min-height: 56px; }
+.pt-clinical .pt-todo-screen .pt-med-taken-count { font-size: 18px; }
+.pt-todo-screen .pt-dose-checkbox span { font-size: 20px; }
+.pt-todo-screen .pt-dose-checkbox input { width: 30px; height: 30px; }
+.pt-todo-screen .pt-daily-reminders li { font-size: 22px; }
+.pt-todo-screen .pt-daily-reminders .pt-btn { font-size: 21px; }
+.pt-clinical .pt-main .pt-todo-screen .pt-card h3 { font-size: 25px; }
+.pt-clinical .pt-main .pt-todo-screen .pt-card .lead { font-size: 21px; }
+.pt-todo-screen .pt-card .cp-chip { font-size: 17px; }
+.pt-todo-screen .pt-appointment-contact p, .pt-todo-screen .pt-appointment-contact a, .pt-todo-screen .pt-appointment-phone { font-size: 20px; }
