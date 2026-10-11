@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { LayoutGrid, Plus, User } from "lucide-react";
 import { clsx } from "@/lib/clsx";
 import type { ReactNode } from "react";
+import { api } from "@/components/client-api";
 
 /**
  * Provider portal shell: fixed teal navigation rail + topbar, ported from
@@ -49,7 +50,7 @@ export function ProviderShell({
           <span className="cp-lbl">Dashboard</span>
         </Link>
         <Link
-          href="/provider/discharge/ELN-7Q2K"
+          href="/provider/discharge/new"
           className={clsx("cp-nav", active === "new" && "cp-nav--on")}
         >
           <Plus size={18} aria-hidden="true" />
@@ -69,7 +70,11 @@ export function ProviderShell({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => router.push("/signin")}
+            onClick={async () => {
+              // End the server session, then return to sign-in even if the request fails.
+              await api("auth/logout", "POST").catch(() => {});
+              router.push("/signin");
+            }}
           >
             Sign out
           </Button>

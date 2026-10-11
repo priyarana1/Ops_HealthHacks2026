@@ -47,3 +47,6 @@ export const DISCHARGE_LIST: DischargeListItem[] = [
     openable: false,
   },
 ];
+
+/** The one scripted, fully wired demo plan (sample data, no AI); kept as a fallback for live demos. */
+export const DEMO_PLAN_ID = "ELN-7Q2K";

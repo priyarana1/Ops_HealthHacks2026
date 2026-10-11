@@ -6,12 +6,19 @@ import { handler } from '@/lib/security/http';
 import { AppError } from '@/lib/security/core';
 import { createDischarge,addSource,correctSource,processDischarge,reviewDischarge,approveDischarge,grantAccess,revokeAccess,snapshot,MAX_DOCUMENT_BYTES } from './service';
 import { ownedEpisode } from './repository';
-import { SourceModel,EpisodeModel } from './models';
+import { SourceModel,EpisodeModel,PatientReferenceModel,ClinicalPlanModel } from './models';
 import { activatePatient,loginPatient,logoutPatient,patientIdentity,patientPlan,patientLimit } from './patient';
 const json=boundedJson;
 export const providerBackend=handler(async(req:NextRequest)=>{
  const provider=await identity('provider'),owner=provider.identity as string;const parts=req.nextUrl.pathname.slice('/api/discharges'.length).split('/').filter(Boolean);
- if(!parts.length){if(req.method==='POST')return createDischarge(owner,provider.sessionHash,await json(req));if(req.method==='GET'){const {connectDB}=await import('@/lib/db/mongodb');await connectDB();return {episodes:await EpisodeModel.find({owner,expiresAt:{$gt:new Date()}}).select('episodeId planId patientId state version dischargeAt expiresAt').sort({createdAt:-1}).limit(50).lean()};}}
+ if(!parts.length){if(req.method==='POST')return createDischarge(owner,provider.sessionHash,await json(req));if(req.method==='GET'){
+  // Dashboard rows: add the synthetic display name and first diagnosis so the list needs one request.
+  const {connectDB}=await import('@/lib/db/mongodb');await connectDB();
+  const episodes=await EpisodeModel.find({owner,expiresAt:{$gt:new Date()}}).select('episodeId planId patientId state version dischargeAt expiresAt createdAt').sort({createdAt:-1}).limit(50).lean(),ids=episodes.map(e=>e.episodeId);
+  const names=new Map((await PatientReferenceModel.find({episodeId:{$in:ids}}).select('episodeId displayName').lean()).map(p=>[p.episodeId,p.displayName]));
+  const diagnoses=new Map((await ClinicalPlanModel.find({episodeId:{$in:ids}}).select('episodeId content.diagnoses content.summary').lean()).map(p=>[p.episodeId,p.content?.diagnoses?.[0]?.text || p.content?.summary?.text || null]));
+  return {episodes:episodes.map(e=>({...e,displayName:names.get(e.episodeId) || null,diagnosis:diagnoses.get(e.episodeId) || null}))};
+ }}
  const planId=z.string().uuid().parse(parts[0]),action=parts[1];if(parts.length>2)throw new AppError(404,'Endpoint not found.');
  if(!action && req.method==='GET')return snapshot(planId,owner);
  if(action==='sources' && req.method==='GET'){const episode=await ownedEpisode(planId,owner);return {sources:await SourceModel.find({episodeId:episode.episodeId}).lean()};}
