@@ -31,13 +31,10 @@ const CLINICS = {
 const LOCALES: Partial<Record<PlanLanguage, string>> = { en: "en-US", es: "es-US", zh: "zh-CN", ar: "ar-u-nu-latn" };
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function appointmentDate(dischargeAt: Date, days: number, hour: number, minute: number) {
+function appointmentTime(dischargeAt: Date, days: number, hour: number, minute: number, lang: PlanLanguage) {
   const date = new Date(dischargeAt.getTime() + days * DAY_MS);
   date.setHours(hour, minute, 0, 0);
   while (date.getDay() === 0 || date.getDay() === 6) date.setDate(date.getDate() + 1); // weekdays only
-  return date;
-}
-function appointmentTime(date: Date, lang: PlanLanguage) {
   const locale = LOCALES[lang] ?? "en-US";
   const text = `${date.toLocaleDateString(locale, { weekday: "long", month: "long", day: "numeric" })} · ${date.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" })}`;
   return text.charAt(0).toLocaleUpperCase(locale) + text.slice(1); // "lunes" -> "Lunes"
@@ -59,8 +56,7 @@ export function withScheduledAppointments(plan: PlanContent, english: PlanConten
     // A short card title replaces the instruction wording; the booked time already says when.
     const titles = "withHeart" in c && /heart|cardio/i.test(text) ? c.withHeart : c.title;
     const type = (titles as Partial<Record<PlanLanguage, string>>)[lang] ?? titles.en;
-    const date = appointmentDate(dischargeAt, c.daysAfterDischarge, c.hour, c.minute);
-    return { ...appointment, type, scheduleNeeded: false, clinic: c.clinic, location: c.location, mapsUrl: maps(c.location), phone: c.phone, website: c.website, when: appointmentTime(date, lang), startsAt: date.toISOString() };
+    return { ...appointment, type, scheduleNeeded: false, clinic: c.clinic, location: c.location, mapsUrl: maps(c.location), phone: c.phone, website: c.website, when: appointmentTime(dischargeAt, c.daysAfterDischarge, c.hour, c.minute, lang) };
   });
   return { ...plan, appointments };
 }

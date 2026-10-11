@@ -9,7 +9,6 @@ import {
   Pill,
   ListChecks,
   ClipboardPen,
-  HeartPulse,
   Download,
   X,
   MessageCircle,
@@ -181,7 +180,6 @@ export function PatientApp({ expired = false, data = DEMO_DATA, verify, signedIn
               lang={lang}
               daysLeft={daysLeft}
               go={setScreen}
-              done={done}
             />
           )}
           {screen === "meds" && (
@@ -382,67 +380,43 @@ function OtpScreen({ onSuccess, verify, initiallyLocked = false }: { onSuccess: 
 }
 
 /* ---------- Home ---------- */
-const HOME_COPY = {
-  en: { greeting: ["Good morning", "Good afternoon", "Good evening"], today: "Today", progress: (d: number, n: number) => `${d} of ${n} done`, allDone: "All done for today. Great job!", questionnaire: "Bring me to my questionnaire" },
-  es: { greeting: ["Buenos días", "Buenas tardes", "Buenas noches"], today: "Hoy", progress: (d: number, n: number) => `${d} de ${n} completadas`, allDone: "¡Todo listo por hoy! Muy bien.", questionnaire: "Ir a mi cuestionario" },
-  zh: { greeting: ["早上好", "下午好", "晚上好"], today: "今天", progress: (d: number, n: number) => `已完成 ${d}/${n}`, allDone: "今天的任务都完成了，做得好！", questionnaire: "查看我的问卷" },
-  ar: { greeting: ["صباح الخير", "مساء الخير", "مساء الخير"], today: "اليوم", progress: (d: number, n: number) => `تم إنجاز ${d} من ${n}`, allDone: "أنجزت كل مهام اليوم. أحسنت!", questionnaire: "انتقل إلى استبياني" },
-};
-
 function HomeScreen({
   t,
   lang,
   daysLeft,
   go,
-  done,
 }: {
   t: (typeof UI)[Language];
   lang: Language;
   daysLeft: number;
   go: (s: Screen) => void;
-  done: Record<string, boolean>;
 }) {
-  const content = usePlanContent(lang);
   const data = usePatientData();
-  const copy = HOME_COPY[lang];
-  const C = 2 * Math.PI * 46;
+  const C = 2 * Math.PI * 38;
   const off = C * (1 - daysLeft / 30);
   const expDate = new Date(data.expiresAt).toLocaleDateString(
     t.localeDate,
     { year: "numeric", month: "long", day: "numeric" },
   );
-  // Time-of-day greeting, set after mount so it uses the patient's own clock.
-  const [hour, setHour] = useState<number | null>(null);
-  useEffect(() => { setHour(new Date().getHours()); }, []);
-  const greeting = hour === null ? t.hello.replace("Eleanor", data.firstName) : `${copy.greeting[hour < 12 ? 0 : hour < 17 ? 1 : 2]}${lang === "zh" ? "，" : ", "}${data.firstName}${lang === "zh" ? "。" : "."}`;
-  const { completed, total } = todayProgress(content, lang === "es" ? "es" : "en", done);
   return (
-    <section className="pt-home">
-      <h1>{greeting}</h1>
+    <section>
+      <h1>{t.hello.replace("Eleanor", data.firstName)}</h1>
       <p className="lead">{t.sub}</p>
-
-      {total > 0 && <section className="pt-card pt-home-today" aria-labelledby="home-today">
-        <div className="pt-home-heading"><span className="pt-home-icon"><ListChecks size={30} aria-hidden="true" /></span><h2 id="home-today">{copy.today}</h2></div>
-        <p className="pt-home-today-count">{completed === total ? copy.allDone : copy.progress(completed, total)}</p>
-        <progress className="pt-plan-progress" value={completed} max={total} aria-label={copy.progress(completed, total)} />
-        <button className="pt-btn pt-btn--big" type="button" onClick={() => go("todo")}>{ARTICLE_COPY[lang].todo}<ChevronRight size={24} className="go" aria-hidden="true" /></button>
-      </section>}
-
-      <div className="pt-card pt-count">
+      <div className="pt-card pt-card--sage pt-count">
         <div
           className="pt-ring"
           role="img"
           aria-label={`${daysLeft} of 30 days left`}
         >
-          <svg width="112" height="112" viewBox="0 0 112 112" aria-hidden="true">
-            <circle cx="56" cy="56" r="46" fill="none" stroke="currentColor" strokeOpacity="0.18" strokeWidth="10" />
+          <svg width="92" height="92" viewBox="0 0 92 92">
+            <circle cx="46" cy="46" r="38" fill="none" stroke="currentColor" strokeOpacity="0.2" strokeWidth="9" />
             <circle
-              cx="56"
-              cy="56"
-              r="46"
+              cx="46"
+              cy="46"
+              r="38"
               fill="none"
               stroke="currentColor"
-              strokeWidth="10"
+              strokeWidth="9"
               strokeLinecap="round"
               strokeDasharray={C.toFixed(1)}
               strokeDashoffset={off.toFixed(1)}
@@ -452,17 +426,12 @@ function HomeScreen({
         </div>
         <div>
           <h2 style={{ margin: 0 }}>{t.daysLeft(daysLeft)}</h2>
-          <p className="pt-count-note">{t.stays(expDate)}</p>
+          <p style={{ margin: "6px 0 0", fontSize: 18 }}>{t.stays(expDate)}</p>
         </div>
       </div>
-
-      <div className="pt-card pt-home-why">
-        <div className="pt-home-heading"><span className="pt-home-icon pt-home-icon--red"><HeartPulse size={30} aria-hidden="true" /></span><h2>{content.whyTitle}</h2></div>
-        <p>{content.why}</p>
-      </div>
-
       <div className="pt-home-actions">
-        <button className="pt-linkcard" type="button" onClick={() => go("checkin")}><span className="pt-home-icon pt-home-icon--sage"><ClipboardPen size={28} aria-hidden="true" /></span><span><b>{copy.questionnaire}</b></span><ChevronRight size={26} className="go" aria-hidden="true" /></button>
+        <button className="pt-linkcard" type="button" onClick={() => go("todo")}><ListChecks size={28} aria-hidden="true" /><span><b>{ARTICLE_COPY[lang].todo}</b></span><ChevronRight size={24} className="go" aria-hidden="true" /></button>
+        <button className="pt-linkcard" type="button" onClick={() => go("checkin")}><ClipboardPen size={28} aria-hidden="true" /><span><b>{{ en: "Bring me to my questionnaire", es: "Ir a mi cuestionario", zh: "查看我的问卷", ar: "انتقل إلى استبياني" }[lang]}</b></span><ChevronRight size={24} className="go" aria-hidden="true" /></button>
       </div>
       <RecommendedTips lang={lang} />
     </section>

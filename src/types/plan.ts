@@ -64,8 +64,6 @@ export const appointmentSchema = z.object({
   type: z.string(),
   specialty: z.string().optional(),
   when: z.string().optional(),
-  /** ISO start time, when known; used to find the next appointment. */
-  startsAt: z.string().optional(),
   /** Clinic or lab name, shown above the address. */
   clinic: z.string().optional(),
   location: z.string().optional(),

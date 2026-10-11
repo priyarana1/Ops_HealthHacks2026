@@ -1024,7 +1024,7 @@ p {
 
 /* Countdown */
 .pt-count { display: flex; gap: 16px; align-items: center; }
-.pt-ring { position: relative; width: 112px; height: 112px; flex: none; }
+.pt-ring { position: relative; width: 92px; height: 92px; flex: none; }
 .pt-ring svg { display: block; transform: rotate(-90deg); }
 .pt-ring b {
   position: absolute;
@@ -1033,7 +1033,7 @@ p {
   align-items: center;
   justify-content: center;
   font-family: var(--font-sans);
-  font-size: 44px;
+  font-size: 40px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.03em;
@@ -1855,31 +1855,6 @@ h2 { font-size: 22px; }
 .pt-dose-checkbox span { font-size: 17px; line-height: 1.5; overflow-wrap: anywhere; }
 .pt-dose-checkbox--taken span { color: var(--muted); }
 
-/* Home tab: large, high-contrast cards for older readers. */
-.pt-main .pt-home h1 { font-size: clamp(34px, 6vw, 42px); }
-.pt-main .pt-home .lead { font-size: 20px; line-height: 1.5; }
-.pt-main .pt-home h2 { font-size: 26px; }
-.pt-home .pt-card { padding: 24px; margin: 18px 0; border-radius: 16px; }
-.pt-home-heading { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
-.pt-main .pt-home-heading h2 { margin: 0; }
-.pt-home-icon { display: inline-grid; place-items: center; width: 52px; height: 52px; flex: none; border-radius: 50%; background: var(--blue-bg); color: var(--primary); }
-.pt-home-icon--blue { background: var(--blue-bg); color: var(--primary); }
-.pt-home-icon--red { background: var(--brand-red-soft); color: var(--brand-red); }
-.pt-home-icon--sage { background: var(--sage-bg); color: var(--sage-fg); }
-.pt-home-today { border: 2px solid var(--primary); }
-.pt-home-today-count { font-size: 24px; font-weight: 700; color: var(--ink); margin: 4px 0 0; }
-.pt-home-today .pt-plan-progress { height: 14px; margin: 14px 0 20px; }
-.pt-home-today .pt-btn { justify-content: space-between; text-align: start; }
-.pt-home .pt-count { gap: 22px; background: var(--sage-bg); color: var(--sage-fg); border-color: transparent; }
-.pt-count-note { margin: 8px 0 0; font-size: 20px; line-height: 1.45; }
-.pt-home-why p { margin: 0; font-size: 21px; line-height: 1.6; }
-.pt-home .pt-home-actions .pt-linkcard { min-height: 88px; padding: 18px 20px; font-size: 22px; }
-.pt-home .pt-home-actions .pt-linkcard b { font-size: 22px; }
-.pt-home-today .go { margin-inline-start: auto; flex: none; }
-[dir="rtl"] .pt-home .go { transform: scaleX(-1); }
-@media (max-width: 420px) {
-  .pt-home .pt-count { flex-direction: column; align-items: flex-start; }
-}
 .pt-home-actions { margin-top: 24px; }
 .pt-home-actions .pt-linkcard { min-height: 80px; padding: 18px; text-align: start; }
 .pt-home-actions .pt-linkcard > svg:first-child { color: var(--ink); flex-shrink: 0; }
