@@ -4,10 +4,10 @@ import { z } from 'zod';
 import { identity } from '@/lib/auth/session';
 import { handler } from '@/lib/security/http';
 import { AppError } from '@/lib/security/core';
-import { createDischarge,addSource,correctSource,processDischarge,reviewDischarge,approveDischarge,grantAccess,revokeAccess,snapshot,MAX_DOCUMENT_BYTES } from './service';
+import { createDischarge,addSource,correctSource,processDischarge,reviewDischarge,approveDischarge,grantAccess,publishLink,revokeAccess,snapshot,MAX_DOCUMENT_BYTES } from './service';
 import { ownedEpisode } from './repository';
 import { SourceModel,EpisodeModel,PatientReferenceModel,ClinicalPlanModel } from './models';
-import { activatePatient,loginPatient,logoutPatient,patientIdentity,patientPlan,patientLimit } from './patient';
+import { activatePatient,loginPatient,logoutPatient,patientIdentity,patientPlan,patientLimit,linkStatus,verifyLink } from './patient';
 const json=boundedJson;
 export const providerBackend=handler(async(req:NextRequest)=>{
  const provider=await identity('provider'),owner=provider.identity as string;const parts=req.nextUrl.pathname.slice('/api/discharges'.length).split('/').filter(Boolean);
@@ -41,7 +41,7 @@ export const providerBackend=handler(async(req:NextRequest)=>{
   await EpisodeModel.collection.updateOne({_id:episode._id},{$set:{dischargeAt,expiresAt:past,state:'EXPIRED'}});
   for(const model of patientDataModels)await model.collection.updateMany({episodeId:episode.episodeId},{$set:{expiresAt:past}});await ObjectManifestModel.updateMany({episodeId:episode.episodeId},{$set:{expiresAt:past}});return {state:'EXPIRED',expiresAt:past,cleanupPending:true};
  }
- if(action==='publish')throw new AppError(409,'Clinical approval and explicit grant-access are separate. Use the documented grant-access contract.');
+ if(action==='publish' && req.method==='POST')return publishLink(planId,owner);
  throw new AppError(404,'Endpoint not found.');
 });
 export const patientBackend=handler(async(req:NextRequest)=>{
@@ -49,6 +49,8 @@ export const patientBackend=handler(async(req:NextRequest)=>{
  if(action==='activate' && req.method==='POST')return activatePatient(await json(req));
  if(action==='login' && req.method==='POST')return loginPatient(await json(req));
  if(action==='logout' && req.method==='POST')return logoutPatient();
+ if(action==='link' && req.method==='POST')return linkStatus(await json(req));
+ if(action==='link/verify' && req.method==='POST')return verifyLink(await json(req));
  if(action==='me' && req.method==='GET'){const {account,episode}=await patientIdentity();return {authenticated:true,accountId:account.accountId,episodeId:episode.episodeId,planId:episode.planId,expiresAt:episode.expiresAt};}
  if(action==='discharge-plan' && req.method==='GET')return patientPlan();
  if(action==='password-reset' && req.method==='POST'){await patientLimit('password-reset-global',20);throw new AppError(503,'Self-service password reset is unavailable. Contact your clinician for a replacement invitation and separately issued code.');}

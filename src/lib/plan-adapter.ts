@@ -42,8 +42,15 @@ function toMedication(m: BackendMedication): Medication {
 export function toPlanContent(content: GeneratedContent): PlanContent {
   const items = (list: { text: string }[]) => list.map((i) => cleanProse(i.text)).filter((t) => t && !isHeading(t));
   const why = cleanProse(content.summary?.text) || items(content.hospitalCourse).join(" ");
+  // The patient checklist gives the first weigh-in, sodium and fluid items special treatment by id.
+  const special: Array<[string, RegExp]> = [["weigh", /\bweigh/i], ["salt", /\bsodium\b|\bsalt\b/i], ["fluids", /\bfluid/i]];
+  const used = new Set<string>();
   const todos = (["dailyActions", "diet", "fluids", "activity", "otherInstructions"] as const).flatMap((section) =>
-    items(content[section]).map((label, i) => ({ id: `${section}-${i}`, label })),
+    items(content[section]).map((label, i) => {
+      const match = special.find(([id, pattern]) => !used.has(id) && pattern.test(label))?.[0];
+      if (match) used.add(match);
+      return { id: match ?? `${section}-${i}`, label };
+    }),
   );
   const appointments = [...items(content.appointments), ...items(content.labsAndMonitoring)].map((type) => ({ type, scheduleNeeded: true }));
   const zone = (severity: WarningZone["severity"], levels: string[]): WarningZone[] => {

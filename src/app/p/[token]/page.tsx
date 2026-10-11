@@ -1,18 +1,19 @@
 import { PatientApp } from "@/components/patient/PatientApp";
+import { PatientPortal } from "@/components/patient/PatientPortal";
+import { DEMO_PLAN_ID } from "@/mocks/discharges";
 
 /**
  * Patient portal, reached via a secure per-plan link: /p/<token>.
  *
- * In production the token would be validated server-side and gate access to the
- * approved plan (with OTP). In this demo the token is accepted and the OTP step
- * (code 418203) runs client-side against synthetic data. No PHI is stored client-side.
+ * Real links are validated server-side; the patient enters the 6-digit code from their care team
+ * and then sees their clinician-approved plan. The Eleanor demo link keeps the sample walkthrough
+ * (demo code 418203, synthetic data, no server calls).
  */
 export default async function PatientPortalPage({
   params,
 }: {
   params: Promise<{ token: string }>;
 }) {
-  // Token is awaited to match the real route contract; unused in the mock.
-  await params;
-  return <PatientApp />;
+  const { token } = await params;
+  return token === DEMO_PLAN_ID ? <PatientApp /> : <PatientPortal token={token} />;
 }

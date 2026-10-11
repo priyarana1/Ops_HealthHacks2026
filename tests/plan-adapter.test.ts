@@ -49,7 +49,7 @@ describe("plan adapter", () => {
     expect(plan.medications.stop[1].note).toBe("On hold pending repeat potassium tests.");
   });
   it("builds to-dos without headings, and appointments without invented dates", () => {
-    expect(plan.todos.map((t) => t.label)).toEqual(["Weigh yourself each morning.", "Aim for about 2 grams of sodium daily."]);
+    expect(plan.todos).toEqual([{ id: "weigh", label: "Weigh yourself each morning." }, { id: "salt", label: "Aim for about 2 grams of sodium daily." }]);
     expect(plan.appointments).toEqual([{ type: "See primary care within about 1 week.", scheduleNeeded: true }, { type: "Get a blood test for kidney function.", scheduleNeeded: true }]);
   });
   it("maps call-the-team signs to yellow and urgent or emergency signs to red", () => {

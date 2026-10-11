@@ -107,6 +107,23 @@ export async function grantAccess(planId:string,owner:string,body:unknown,resend
  }catch(e){await transaction(async session=>{await InvitationModel.updateOne({invitationId},{$set:{state:'FAILED'}},{session});await EpisodeModel.updateOne({_id:episode._id,grantInvitationId:invitationId,state:'ACCESS_GRANTED'},{$set:{state:'APPROVED'},$unset:{grantVersion:1,grantInvitationId:1}},{session});});throw e;}
  return {state:'ACCESS_GRANTED',invitationId,validUntil,activationCode,delivery:'SES_ACCEPTED',identityAssurance:'email-link-plus-separately-issued-clinician-code'};
 }
+// Secure-link access: the patient opens /p/<token> and enters a 6-digit code. Both are stored only as
+// hashes, work until the episode expires, and lock after 5 wrong codes. Publishing again replaces
+// the previous link and signs out existing patient sessions. The code is returned once so the nurse
+// can hand it to the patient; that is only allowed in demo/development until SMS delivery exists.
+export const LINK_RECIPIENT='secure-link';
+export async function publishLink(planId:string,owner:string){
+ if(process.env.NODE_ENV==='production' && process.env.ENABLE_DEMO_MODE!=='true')throw new AppError(503,'Configure a verified code delivery channel before issuing patient codes.');
+ const episode=await ownedEpisode(planId,owner);requireState(episode.state,['APPROVED','ACCESS_GRANTED','ACTIVE']);await signedContent(episode);
+ const token=randomToken(),code=String(randomInt(0,1000000)).padStart(6,'0'),codeHash=await bcrypt.hash(code,12),invitationId=randomUUID();
+ await transaction(async session=>{
+  const claimed=await EpisodeModel.updateOne({_id:episode._id,version:episode.version,state:episode.state,expiresAt:{$gt:new Date()}},{$set:{state:'ACCESS_GRANTED',grantVersion:episode.version,grantInvitationId:invitationId}},{session});if(!claimed.modifiedCount)throw new AppError(409,'Discharge changed. Reload and retry.');
+  await InvitationModel.updateMany({episodeId:episode.episodeId,state:{$in:['SENT','PENDING_DELIVERY']}},{$set:{state:'REVOKED'}},{session});
+  await AccountModel.updateMany({episodeId:episode.episodeId},{$set:{state:'REVOKED'}},{session});await PatientSessionModel.deleteMany({episodeId:episode.episodeId},{session});
+  await InvitationModel.create([{episodeId:episode.episodeId,invitationId,email:LINK_RECIPIENT,tokenHash:hash(token),codeHash,validUntil:episode.expiresAt,expiresAt:episode.expiresAt,state:'SENT',version:episode.version,createdAt:new Date(),attempts:0}],{session});
+ });
+ return {state:'ACCESS_GRANTED',link:`${process.env.APP_URL || 'http://localhost:3000'}/p/${token}`,code,expiresAt:episode.expiresAt,codeDelivery:'shown-to-clinician'};
+}
 export async function revokeAccess(planId:string,owner:string){const episode=await ownedEpisode(planId,owner,true);requireState(episode.state,['APPROVED','ACCESS_GRANTED','ACTIVE','REVOKED']);if(episode.state==='REVOKED')return {state:'REVOKED'};await transaction(async session=>{const changed=await EpisodeModel.updateOne({_id:episode._id,version:episode.version,expiresAt:{$gt:new Date()}},{$set:{state:'REVOKED'},$unset:{grantVersion:1,grantInvitationId:1}},{session});if(!changed.modifiedCount)throw new AppError(409,'Discharge changed. Reload before revoking.');await invalidate(episode.episodeId,session);});return {state:'REVOKED'};}
 export {snapshot,MAX_DOCUMENT_BYTES};
 

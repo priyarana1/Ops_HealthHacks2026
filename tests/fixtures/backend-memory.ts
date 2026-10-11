@@ -4,7 +4,7 @@ type Row=Record<string,unknown>;
 const value=(row:Row,key:string)=>key.split('.').reduce<unknown>((v,k)=>v && typeof v==='object'?(v as Row)[k]:undefined,row);
 function match(row:Row,filter:Row):boolean{return Object.entries(filter).every(([k,w])=>{
  if(k==='$or')return (w as Row[]).some(f=>match(row,f));
- const actual=value(row,k);if(w && typeof w==='object' && !(w instanceof Date))return Object.entries(w).every(([op,v])=>op==='$gt'?Number(actual)>Number(v):op==='$lt'?Number(actual)<Number(v):op==='$lte'?Number(actual)<=Number(v):op==='$in'?(v as unknown[]).includes(actual):op==='$exists'?(actual!==undefined)===v:false);
+ const actual=value(row,k);if(w && typeof w==='object' && !(w instanceof Date))return Object.entries(w).every(([op,v])=>op==='$gt'?Number(actual)>Number(v):op==='$lt'?Number(actual)<Number(v):op==='$lte'?Number(actual)<=Number(v):op==='$gte'?Number(actual)>=Number(v):op==='$in'?(v as unknown[]).includes(actual):op==='$exists'?(actual!==undefined)===v:false);
  return actual===w;
 });}
 function update(row:Row,changes:Row){for(const [k,v] of Object.entries(changes.$set as Row || {}))row[k]=v;for(const k of Object.keys(changes.$unset as Row || {}))delete row[k];for(const [k,v] of Object.entries(changes.$inc as Row || {}))row[k]=Number(row[k] || 0)+Number(v);}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { Brand } from "@/components/ui/Brand";
 import { clsx } from "@/lib/clsx";
@@ -34,14 +34,42 @@ import { ELEANOR_PLAN_CONTENT } from "@/mocks/plan";
 import { DEMO_OTP, ELEANOR } from "@/mocks/patient";
 import { UI } from "@/lib/i18n";
 import { LANGUAGE_LABELS, LANGUAGE_DIR } from "@/types/plan";
-import type { Language } from "@/types/plan";
+import type { Language, PlanContent, Medication } from "@/types/plan";
 
 const PHONE = "(732) 555-0100";
 type Screen = "otp" | "home" | "meds" | "todo" | "chat" | "checkin" | "expired" | "profile" | "articles";
 
-export function PatientApp({ expired = false }: { expired?: boolean }) {
+/** The plan shown in the app. The default is the Eleanor demo; real patients get their approved plan. */
+export interface PatientData {
+  name: string;
+  firstName: string;
+  age?: number;
+  diagnosis: string;
+  expiresAt: string;
+  content: Partial<Record<Language, PlanContent>>;
+  demo: boolean;
+}
+const DEMO_DATA: PatientData = { name: ELEANOR.name, firstName: "Eleanor", age: ELEANOR.age, diagnosis: ELEANOR.primaryDiagnosis, expiresAt: new Date(Date.now() + 27 * 864e5).toISOString(), content: ELEANOR_PLAN_CONTENT, demo: true };
+const PatientDataContext = createContext<PatientData>(DEMO_DATA);
+const usePatientData = () => useContext(PatientDataContext);
+/** Content in the chosen language, falling back to English when that language is not published. */
+function usePlanContent(lang: Language): PlanContent {
+  const data = usePatientData();
+  return data.content[lang] ?? data.content.en!;
+}
+/** Result of checking a 6-digit code against the server. */
+export type CodeCheck = { ok: true } | { ok: false; triesLeft: number };
+
+export function PatientApp({ expired = false, data = DEMO_DATA, verify, signedIn = false, locked = false }: {
+  expired?: boolean;
+  data?: PatientData;
+  /** Real patients: checks the code with the server. Omitted for the demo, which uses the sample code. */
+  verify?: (code: string) => Promise<CodeCheck>;
+  signedIn?: boolean;
+  locked?: boolean;
+}) {
   const [lang, setLang] = useState<Language>("en");
-  const [screen, setScreen] = useState<Screen>(expired ? "expired" : "otp");
+  const [screen, setScreen] = useState<Screen>(expired ? "expired" : signedIn ? "home" : "otp");
   const [done, setDone] = useState<Record<string, boolean>>({});
   const [calling, setCalling] = useState<string | null>(null);
   const [sos, setSos] = useState(false);
@@ -53,13 +81,14 @@ export function PatientApp({ expired = false }: { expired?: boolean }) {
   useEffect(() => {
     try {
       const saved = localStorage.getItem("cp_patient_language");
-      if (saved && Object.prototype.hasOwnProperty.call(LANGUAGE_LABELS, saved)) setLang(saved as Language);
+      if (saved && Object.prototype.hasOwnProperty.call(data.content, saved)) setLang(saved as Language);
     } catch { /* Language selection still works when browser storage is unavailable. */ }
-  }, []);
+  }, [data.content]);
+  useEffect(() => { if (expired) setScreen("expired"); }, [expired]);
 
   const t = UI[lang];
   const dir = LANGUAGE_DIR[lang];
-  const daysLeft = 27;
+  const daysLeft = Math.max(0, Math.ceil((new Date(data.expiresAt).getTime() - Date.now()) / 864e5));
 
   useEffect(() => {
     if (!sos && !calling) return;
@@ -111,12 +140,13 @@ export function PatientApp({ expired = false }: { expired?: boolean }) {
   const bare = screen === "otp" || screen === "expired";
 
   return (
+    <PatientDataContext.Provider value={data}>
     <div className="pt-stage">
       <div className="pt-device pt-clinical" ref={deviceRef}>
         {/* prototype chrome */}
         <div className="pt-proto">
-          <span className="pt-demo-label">Demonstration · Sample patient data</span>
-          {!bare && (
+          <span className="pt-demo-label">{data.demo ? "Demonstration · Sample patient data" : "Synthetic test patient · Not real patient data"}</span>
+          {data.demo && !bare && (
             <button
               type="button"
               className="demo"
@@ -129,7 +159,7 @@ export function PatientApp({ expired = false }: { expired?: boolean }) {
 
         <div className="pt-top">
           <div className="pt-portal-brand"><Brand size={28} /><span>Heart care recovery portal</span></div>
-          {!bare && <span className="pt-who">Eleanor</span>}
+          {!bare && <span className="pt-who">{data.firstName}</span>}
         </div>
 
         <main
@@ -143,7 +173,7 @@ export function PatientApp({ expired = false }: { expired?: boolean }) {
           lang={lang}
         >
           {screen === "otp" && (
-            <OtpScreen onSuccess={() => setScreen("home")} />
+            <OtpScreen onSuccess={() => setScreen("home")} verify={verify} initiallyLocked={locked} />
           )}
           {screen === "home" && (
             <HomeScreen
@@ -233,14 +263,16 @@ export function PatientApp({ expired = false }: { expired?: boolean }) {
         )}
       </div>
     </div>
+    </PatientDataContext.Provider>
   );
 }
 
 /* ---------- OTP ---------- */
-function OtpScreen({ onSuccess }: { onSuccess: () => void }) {
+function OtpScreen({ onSuccess, verify, initiallyLocked = false }: { onSuccess: () => void; verify?: (code: string) => Promise<CodeCheck>; initiallyLocked?: boolean }) {
   const [digits, setDigits] = useState<string[]>(Array(6).fill(""));
   const [tries, setTries] = useState(5);
-  const [state, setState] = useState<"" | "wrong" | "cool">("");
+  const [state, setState] = useState<"" | "wrong" | "cool">(initiallyLocked ? "cool" : "");
+  const [checking, setChecking] = useState(false);
   const refs = useRef<Array<HTMLInputElement | null>>([]);
 
   function setDigit(i: number, v: string) {
@@ -253,8 +285,22 @@ function OtpScreen({ onSuccess }: { onSuccess: () => void }) {
     if (clean && i < 5) refs.current[i + 1]?.focus();
   }
 
-  function submit() {
+  async function submit() {
     const code = digits.join("");
+    if (verify) {
+      if (code.length !== 6 || checking) return;
+      setChecking(true);
+      const result = await verify(code).catch(() => ({ ok: false as const, triesLeft: tries }));
+      setChecking(false);
+      if (result.ok) {
+        setState("");
+        onSuccess();
+        return;
+      }
+      setTries(result.triesLeft);
+      setState(result.triesLeft === 0 ? "cool" : "wrong");
+      return;
+    }
     if (code === DEMO_OTP) {
       setState("");
       onSuccess();
@@ -265,16 +311,16 @@ function OtpScreen({ onSuccess }: { onSuccess: () => void }) {
     setState(left === 0 ? "cool" : "wrong");
   }
 
-  const disabled = state === "cool";
+  const disabled = state === "cool" || checking;
 
   return (
     <section aria-labelledby="h-otp">
-      <h1 id="h-otp">Welcome, Eleanor.</h1>
+      <h1 id="h-otp">{verify ? "Welcome." : "Welcome, Eleanor."}</h1>
       <p className="lead">
         Your hospital sent you a secure link. Enter the 6-digit code to see your
         plan.
       </p>
-      <button
+      {!verify && <button
         type="button"
         className="pt-sms"
         onClick={() => setDigits([..."418203"])}
@@ -285,7 +331,8 @@ function OtpScreen({ onSuccess }: { onSuccess: () => void }) {
         </span>
         <q>RWJ: Your ClearPath code is 418-203. Expires in 15 minutes.</q>
         <small>Tap this message to fill in the code (demo shortcut).</small>
-      </button>
+      </button>}
+      {verify && <p className="fine">Use the 6-digit code your care team gave you at discharge.</p>}
       <div className="pt-otp" role="group" aria-label="6-digit code">
         {digits.map((d, i) => (
           <input
@@ -320,8 +367,8 @@ function OtpScreen({ onSuccess }: { onSuccess: () => void }) {
         <div className="pt-msg pt-msg--red" role="alert">
           <Lock size={26} aria-hidden="true" />
           <span>
-            Too many tries. For your safety, please wait 15 minutes, or call your
-            care team at {PHONE}.
+            {verify ? <>Too many tries. For your safety this link is locked. Call your care team at {PHONE} for a new code.</> : <>Too many tries. For your safety, please wait 15 minutes, or call your
+            care team at {PHONE}.</>}
           </span>
         </div>
       )}
@@ -347,16 +394,17 @@ function HomeScreen({
   daysLeft: number;
   go: (s: Screen) => void;
 }) {
-  const content = ELEANOR_PLAN_CONTENT[lang];
+  const content = usePlanContent(lang);
+  const data = usePatientData();
   const C = 2 * Math.PI * 38;
   const off = C * (1 - daysLeft / 30);
-  const expDate = new Date(Date.now() + daysLeft * 864e5).toLocaleDateString(
+  const expDate = new Date(data.expiresAt).toLocaleDateString(
     t.localeDate,
     { year: "numeric", month: "long", day: "numeric" },
   );
   return (
     <section>
-      <h1>{t.hello}</h1>
+      <h1>{t.hello.replace("Eleanor", data.firstName)}</h1>
       <p className="lead">{t.sub}</p>
       <div className="pt-card pt-card--sage pt-count">
         <div
@@ -418,8 +466,10 @@ const HEART_FAILURE_TIPS = [
 const READ_GUIDE = { en: "Read guide", es: "Leer guía", zh: "阅读指南", ar: "اقرأ الدليل" };
 function RecommendedTips({ lang, showHeading = true }: { lang: Language; showHeading?: boolean }) {
   const copy = TIP_COPY[lang];
-  const hasHeartFailure = /heart failure|hfref|hfpef/i.test(ELEANOR.primaryDiagnosis);
-  const hasLowSaltPlan = ELEANOR_PLAN_CONTENT[lang].todos.some((item) => item.id === "salt");
+  const data = usePatientData();
+  const content = usePlanContent(lang);
+  const hasHeartFailure = /heart failure|hfref|hfpef/i.test(data.diagnosis);
+  const hasLowSaltPlan = content.todos.some((item) => item.id === "salt");
   const tips = hasHeartFailure ? HEART_FAILURE_TIPS.filter((tip) => tip.topic !== "salt" || hasLowSaltPlan) : [];
   if (!tips.length) return null;
   return <section className="pt-recommended-tips pt-reading-library" aria-label={copy.title}>
@@ -472,6 +522,18 @@ const SAMPLE_MED_PERIODS: Record<string, MedPeriod[]> = {
   Metformin: ["morning", "evening"],
 };
 
+/** Illustrative times of day for a medicine, from its prescribed frequency. Never a clinical instruction. */
+function medPeriods(m: Medication): MedPeriod[] {
+  if (SAMPLE_MED_PERIODS[m.name]) return SAMPLE_MED_PERIODS[m.name];
+  const f = (m.frequency ?? "").toLowerCase();
+  if (/night|bedtime/.test(f)) return ["night"];
+  if (/four times|4 times|qid|every 6 hours/.test(f)) return ["morning", "midday", "evening", "night"];
+  if (/three times|3 times|tid|every 8 hours/.test(f)) return ["morning", "midday", "evening"];
+  if (/twice|two times|2 times|bid|every 12 hours/.test(f)) return ["morning", "evening"];
+  if (/once|daily|every day|a day|every morning|qd/.test(f)) return ["morning"];
+  return [];
+}
+
 function MedsScreen({ t, lang }: {
   t: (typeof UI)[Language];
   lang: Language;
@@ -488,7 +550,8 @@ function MedsScreen({ t, lang }: {
       dialog.scrollTo({ top: 0, behavior: "instant" });
     }
   }, [helpMedicine]);
-  const content = ELEANOR_PLAN_CONTENT[lang];
+  const content = usePlanContent(lang);
+  const data = usePatientData();
   const copy = MED_TIMELINE_COPY[lang];
   const cardCopy = MED_CARD_COPY[lang];
   const meds = [...content.medications.new.map((m) => ({ ...m, group: "new" as const })), ...content.medications.keep.map((m) => ({ ...m, group: "keep" as const }))];
@@ -498,7 +561,7 @@ function MedsScreen({ t, lang }: {
     { key: "evening" as const, time: "8 PM", Icon: Sunset },
     { key: "night" as const, time: copy.nightTime, Icon: Moon },
   ];
-  const selectedMeds = meds.filter((m) => SAMPLE_MED_PERIODS[m.name]?.includes(period));
+  const selectedMeds = meds.filter((m) => medPeriods(m).includes(period));
   const helpMed = meds.find((m) => m.name === helpMedicine);
   const safetyNoteNames = ["Apixaban", "Metformin"];
   const medicationWarnings = meds.flatMap((m) => {
@@ -515,10 +578,10 @@ function MedsScreen({ t, lang }: {
   return (
     <section className="pt-medicine-timeline" aria-labelledby="med-title">
       <h1 id="med-title">{t.medsTitle}</h1>
-      <p className="pt-demo-pill-note">{{ en: "Demo pill counts · Confirm with your pharmacy label.", es: "Cantidad de pastillas de ejemplo · Confirme con la etiqueta de la farmacia.", zh: "示例药片数量 · 请核对药房标签。", ar: "عدد حبات توضيحي · تحقق من ملصق الصيدلية." }[lang]}</p>
+      {data.demo && <p className="pt-demo-pill-note">{{ en: "Demo pill counts · Confirm with your pharmacy label.", es: "Cantidad de pastillas de ejemplo · Confirme con la etiqueta de la farmacia.", zh: "示例药片数量 · 请核对药房标签。", ar: "عدد حبات توضيحي · تحقق من ملصق الصيدلية." }[lang]}</p>}
       <div className="pt-day-timeline pt-pill-case" role="group" aria-label={copy.daily}>
         {slots.map(({ key, time, Icon }) => {
-          const count = meds.filter((m) => SAMPLE_MED_PERIODS[m.name]?.includes(key)).length;
+          const count = meds.filter((m) => medPeriods(m).includes(key)).length;
           return <button key={key} type="button" aria-pressed={period === key} onClick={() => setPeriod(key)} className={clsx("pt-time-slot", `pt-pill-compartment--${key}`, period === key && "pt-time-slot--active")}>
             <span className="pt-pill-lid"><span className="pt-time-icon"><Icon size={28} aria-hidden="true" /></span><b>{copy[key]}</b><span className="pt-time-hour" dir="ltr">{time}</span></span>
             <span className="pt-pill-well"><Pill size={28} aria-hidden="true" /><span className="pt-time-count">{count} {copy.doses}</span></span>
@@ -542,7 +605,7 @@ function MedsScreen({ t, lang }: {
           <h2 id="medicine-help-title" tabIndex={-1}><bdi dir="ltr">{helpMed.name}</bdi></h2>
           <dl className="pt-medicine-help-facts">
             <div><dt>{cardCopy.dose}</dt><dd>{helpMed.tabletCount ? pillCountLabel(helpMed.tabletCount, lang) : cardCopy.label}</dd></div>
-            <div><dt>{helpCopy.when}</dt><dd>{helpMed.frequency}</dd><dd>{(SAMPLE_MED_PERIODS[helpMed.name] || []).map((key) => { const time = slots.find((item) => item.key === key)!; return `${copy[key]} · ${time.time}`; }).join(" / ")}</dd></div>
+            <div><dt>{helpCopy.when}</dt><dd>{helpMed.frequency}</dd><dd>{medPeriods(helpMed).map((key) => { const time = slots.find((item) => item.key === key)!; return `${copy[key]} · ${time.time}`; }).join(" / ")}</dd></div>
             {helpMed.purpose && <div><dt>{cardCopy.purpose}</dt><dd>{helpMed.purpose}</dd></div>}
             {helpMed.route && <div><dt>{cardCopy.route}</dt><dd>{helpMed.route}</dd></div>}
           </dl>
@@ -556,10 +619,10 @@ function MedsScreen({ t, lang }: {
         <h2 id="stopped-title"><Ban size={22} aria-hidden="true" />{copy.stop}</h2>
         {content.medications.stop.map((m) => <div className="pt-stopped-row" key={m.name}><h3><bdi dir="ltr">{m.name}</bdi></h3><p>{m.note}</p></div>)}
       </section>
-      <section className="pt-medication-warnings" aria-labelledby="medication-warnings-title">
+      {medicationWarnings.length > 0 && <section className="pt-medication-warnings" aria-labelledby="medication-warnings-title">
         <h2 id="medication-warnings-title">{{ en: "Medication safety", es: "Seguridad de los medicamentos", zh: "用药安全", ar: "سلامة الأدوية" }[lang]}</h2>
         <ul>{medicationWarnings.map(({ name, message }) => <li key={`${name}:${message}`}><h3><bdi dir="ltr">{name}</bdi></h3><p>{message}</p></li>)}</ul>
-      </section>
+      </section>}
     </section>
   );
 }
@@ -572,14 +635,14 @@ const CHECKLIST_COPY = {
 };
 
 function DailyChecklist({ lang, done, setDone, onCheckin }: { onCheckin: () => void; lang: Language; done: Record<string, boolean>; setDone: React.Dispatch<React.SetStateAction<Record<string, boolean>>> }) {
-  const content = ELEANOR_PLAN_CONTENT[lang];
+  const content = usePlanContent(lang);
   const copy = CHECKLIST_COPY[lang];
   const activeMeds = [...content.medications.new, ...content.medications.keep];
   const tasks = content.todos.filter((item) => !["salt", "fluids", "meds", "checkin"].includes(item.id));
   const medicationTasks = (["morning", "evening", "night"] as const).map((period) => ({ id: `meds-${period}`, label: ({ en: "Took ALL medications", es: "Tomé TODOS los medicamentos", zh: "已服用所有药物", ar: "تناولت جميع الأدوية" })[lang], period }));
   const priorities = [...tasks, ...medicationTasks];
   const doseKey = (period: MedPeriod, name: string) => `dose:${period}:${name}`;
-  const periodMeds = (period: MedPeriod) => activeMeds.filter((m) => SAMPLE_MED_PERIODS[m.name]?.includes(period));
+  const periodMeds = (period: MedPeriod) => activeMeds.filter((m) => medPeriods(m).includes(period));
   const isComplete = (id: string, state: Record<string, boolean>) => {
     const medicationTask = medicationTasks.find((item) => item.id === id);
     if (!medicationTask) return !!state[id];
@@ -630,18 +693,19 @@ const PROFILE_COPY = {
 
 function ProfileScreen({ lang, changeLang }: { lang: Language; changeLang: (lang: Language) => void }) {
   const copy = PROFILE_COPY[lang];
-  const content = ELEANOR_PLAN_CONTENT[lang];
+  const content = usePlanContent(lang);
+  const data = usePatientData();
   const t = UI[lang];
   return <section aria-labelledby="profile-title">
     <h1 id="profile-title">{copy.title}</h1>
-    <section className="pt-card pt-profile-info"><UserRound size={28} aria-hidden="true" /><div><h2>{ELEANOR.name}</h2><p>{copy.age}: {ELEANOR.age} {copy.years}</p><p>{copy.condition}</p></div></section>
-    <section className="pt-card"><h2>{copy.language}</h2><label className="pt-language-setting"><span className="sr-only">{copy.language}</span><select value={lang} onChange={(event) => changeLang(event.target.value as Language)} aria-label={copy.language}>{(Object.keys(LANGUAGE_LABELS) as Language[]).map((key) => <option key={key} value={key} lang={key}>{LANGUAGE_LABELS[key]}</option>)}</select></label></section>
+    <section className="pt-card pt-profile-info"><UserRound size={28} aria-hidden="true" /><div><h2>{data.name}</h2>{data.age != null && <p>{copy.age}: {data.age} {copy.years}</p>}<p>{data.demo ? copy.condition : data.diagnosis}</p></div></section>
+    <section className="pt-card"><h2>{copy.language}</h2><label className="pt-language-setting"><span className="sr-only">{copy.language}</span><select value={lang} onChange={(event) => changeLang(event.target.value as Language)} aria-label={copy.language}>{(Object.keys(LANGUAGE_LABELS) as Language[]).filter((key) => data.content[key]).map((key) => <option key={key} value={key} lang={key}>{LANGUAGE_LABELS[key]}</option>)}</select></label></section>
     <details className="pt-profile-discharge" open>
       <summary>{copy.full}</summary><p className="muted">{copy.intro}</p>
       <section><h2>{content.whyTitle}</h2><p>{content.why}</p></section>
-      {(["new", "keep", "stop"] as const).map((group) => <section key={group}><h2>{group === "new" ? t.groupNew : group === "keep" ? t.groupKeep : t.groupStop}</h2>{content.medications[group].map((m) => <article className="pt-profile-med" key={m.name}><h3><bdi dir="ltr">{m.name}{m.tabletCount && ` — ${pillCountLabel(m.tabletCount, lang)}`}</bdi></h3>{m.frequency && <p>{m.frequency}{m.route && ` · ${m.route}`}</p>}{m.purpose && <p>{m.purpose}</p>}{m.note && <p>{m.note}</p>}{m.warning && m.warning !== m.note && <p className="pt-profile-warning">{m.warning}</p>}</article>)}{group === "stop" && <><p>{copy.hold}</p><p>{copy.avoid}</p></>}</section>)}
+      {(["new", "keep", "stop"] as const).map((group) => <section key={group}><h2>{group === "new" ? t.groupNew : group === "keep" ? t.groupKeep : t.groupStop}</h2>{content.medications[group].map((m) => <article className="pt-profile-med" key={m.name}><h3><bdi dir="ltr">{m.name}{m.tabletCount && ` — ${pillCountLabel(m.tabletCount, lang)}`}</bdi></h3>{m.frequency && <p>{m.frequency}{m.route && ` · ${m.route}`}</p>}{m.purpose && <p>{m.purpose}</p>}{m.note && <p>{m.note}</p>}{m.warning && m.warning !== m.note && <p className="pt-profile-warning">{m.warning}</p>}</article>)}{group === "stop" && <><p>{copy.hold}</p>{data.demo && <p>{copy.avoid}</p>}</>}</section>)}
       <section><h2>{copy.daily}</h2><ul>{content.todos.map((item) => <li key={item.id}>{item.label}</li>)}</ul></section>
-      <section><h2>{copy.visits}</h2><ul>{content.appointments.map((visit) => <li key={visit.type}><b>{visit.type}</b><br />{visit.when}</li>)}</ul></section>
+      <section><h2>{copy.visits}</h2><ul>{content.appointments.map((visit) => <li key={visit.type}><b>{visit.type}</b>{visit.when && <><br />{visit.when}</>}</li>)}</ul></section>
       {content.warnings.map((zone) => <section key={zone.severity} className={zone.severity === "red" ? "pt-profile-urgent" : ""}><h2>{zone.severity === "red" ? copy.urgent : copy.team}</h2><ul>{zone.items.map((item) => <li key={item}>{item}</li>)}</ul></section>)}
     </details>
   </section>;
@@ -649,7 +713,8 @@ function ProfileScreen({ lang, changeLang }: { lang: Language; changeLang: (lang
 
 /* ---------- To-do + appointments ---------- */
 function TodoScreen({ lang, go, call, done, setDone }: { go: (screen: Screen) => void; lang: Language; call: (who: string) => void; done: Record<string, boolean>; setDone: React.Dispatch<React.SetStateAction<Record<string, boolean>>> }) {
-  const content = ELEANOR_PLAN_CONTENT[lang];
+  const content = usePlanContent(lang);
+  const data = usePatientData();
   return (
     <section aria-labelledby="h-todo">
       <h1 id="h-todo">{CHECKLIST_COPY[lang].title}</h1>
@@ -657,8 +722,8 @@ function TodoScreen({ lang, go, call, done, setDone }: { go: (screen: Screen) =>
       <DailyChecklist lang={lang} done={done} setDone={setDone} onCheckin={() => go("checkin")} />
 
       <h2 style={{ marginTop: 28 }}>Your appointments</h2>
-      <p className="muted">{{ en: "Demo appointments, addresses, and phone numbers. Links open official RWJBarnabas Health information.", es: "Citas de ejemplo para esta demostración.", zh: "本演示中的预约为示例。", ar: "مواعيد توضيحية لهذا العرض." }[lang]}</p>
-      {content.appointments.slice(0, 2).map((a) => (
+      {data.demo && <p className="muted">{{ en: "Demo appointments, addresses, and phone numbers. Links open official RWJBarnabas Health information.", es: "Citas de ejemplo para esta demostración.", zh: "本演示中的预约为示例。", ar: "مواعيد توضيحية لهذا العرض." }[lang]}</p>}
+      {(data.demo ? content.appointments.slice(0, 2) : content.appointments).map((a) => (
         <div className="pt-card" key={a.type}>
           <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
             <Calendar size={30} aria-hidden="true" />
@@ -738,10 +803,11 @@ function ChatScreen({
   setSos: (b: boolean) => void;
   call: (who: string) => void;
 }) {
+  const { firstName, demo } = usePatientData();
   const [msgs, setMsgs] = useState<Bubble[]>([
     {
       who: "bot",
-      html: "Hi Eleanor. I can answer questions about your plan. I don't give new medical advice.",
+      html: `Hi ${firstName}. I can answer questions about your plan. I don't give new medical advice.`,
     },
   ]);
   const [input, setInput] = useState("");
@@ -803,6 +869,7 @@ function ChatScreen({
   return (
     <section aria-labelledby="h-chat">
       <h1 id="h-chat">{CHAT_HELP_LABEL[lang]}</h1>
+      {!demo && <div className="pt-msg" role="note" style={{ background: "var(--amber-bg)", color: "var(--amber-fg)", border: "2px solid var(--amber)" }}><AlertTriangle size={26} aria-hidden="true" /><span>Demo assistant: these are example answers and are not based on your plan. Check your medicines in the Medicines tab, and ask your care team about anything else.</span></div>}
       <HelpScreen lang={lang} call={call} />
       <p className="fine">Answers are based on your approved discharge plan.</p>
       <div className="pt-chat" ref={chatRef} aria-live="polite">

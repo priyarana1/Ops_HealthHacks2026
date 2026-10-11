@@ -11,7 +11,7 @@ import { Banner } from "@/components/ui/Banner";
 import { Stepper } from "@/components/ui/Stepper";
 import { ToastProvider, useToast } from "@/components/ui/Toast";
 import { clsx } from "@/lib/clsx";
-import { Upload, List, Check, ShieldCheck, Lock, AlertTriangle, ChevronRight, RefreshCw } from "lucide-react";
+import { Upload, List, Check, ShieldCheck, Lock, AlertTriangle, ChevronRight, RefreshCw, Copy } from "lucide-react";
 import { api } from "@/components/client-api";
 import { DocumentDrop, MAX_UPLOAD_BYTES } from "@/components/document-drop";
 import type { GeneratedContent } from "@/lib/backend/contracts";
@@ -53,7 +53,7 @@ function WizardInner({ id }: { id: string }) {
   const [generating, setGenerating] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [after, setAfter] = useState<2 | 3>(2);
-  const autoStarted = useRef(false);
+  const autoStarted = useRef(false), placed = useRef(false);
 
   const load = useCallback(async () => setData(await api("discharges/" + id)), [id]);
 
@@ -84,6 +84,9 @@ function WizardInner({ id }: { id: string }) {
   const content = data?.plan?.content;
   const state = data?.episode.state;
   const approved = !!state && ["APPROVED", "ACCESS_GRANTED", "ACTIVE"].includes(state);
+  useEffect(() => {
+    if (!placed.current && state) { placed.current = true; if (state === "ACCESS_GRANTED" || state === "ACTIVE") setAfter(3); }
+  }, [state]);
   const step: Step = isNew ? 0 : approved ? after : 1;
   const crumb = data?.patient?.displayName ? `${data.patient.displayName} · ${STEPS[step]}` : `New discharge · ${STEPS[step]}`;
 
@@ -104,7 +107,7 @@ function WizardInner({ id }: { id: string }) {
             : <ReviewStep data={data} content={content} busy={busy} run={run} setData={setData} toast={toast} regenerate={generate} onContinue={() => setAfter(2)} />
       )}
       {step === 2 && <TranslatePlaceholder onContinue={() => setAfter(3)} />}
-      {step === 3 && data && <PublishPlaceholder data={data} onBack={() => setAfter(2)} />}
+      {step === 3 && data && <PublishStep data={data} busy={busy} run={run} toast={toast} reload={load} onBack={() => setAfter(2)} onExpired={(message) => { setData(undefined); setError(message); }} />}
     </ProviderShell>
   );
 }
@@ -383,18 +386,74 @@ function TranslatePlaceholder({ onContinue }: { onContinue: () => void }) {
   );
 }
 
-function PublishPlaceholder({ data, onBack }: { data: Snapshot; onBack: () => void }) {
+function PublishStep({ data, busy, run, toast, reload, onBack, onExpired }: {
+  data: Snapshot; busy: string;
+  run: (label: string, fn: () => Promise<void>) => Promise<void>;
+  toast: (m: string) => void; reload: () => Promise<void>; onBack: () => void; onExpired: (message: string) => void;
+}) {
+  const [issued, setIssued] = useState<{ link: string; code: string }>();
+  const published = data.episode.state === "ACCESS_GRANTED" || data.episode.state === "ACTIVE";
   const ex = new Date(data.episode.expiresAt);
+  const dt = ex.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  const tm = ex.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  const publish = () => run("Publishing…", async () => {
+    const result: { link: string; code: string } = await api(`discharges/${data.episode.planId}/publish`, "POST", {});
+    setIssued({ link: result.link, code: result.code });
+    await reload();
+    toast(published ? "New link and code issued. The previous link no longer works." : `Published. ${data.patient?.displayName ?? "The patient"} can now open their plan.`);
+  });
+  const expire = () => {
+    if (!window.confirm("Simulate reaching the end of the 30-day window now? Patient access ends immediately and the records are deleted shortly after. Synthetic test records only.")) return;
+    run("Expiring…", async () => {
+      await api(`discharges/${data.episode.planId}/expire-test`, "POST", {});
+      onExpired("This discharge has expired. The patient link no longer works, and MongoDB deletes the records automatically within about a minute.");
+    });
+  };
   return (
     <>
-      <h1>Ready to publish</h1>
-      <Banner tone="amber" icon="clock">
-        This plan expires on <b>{ex.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</b> at <b>{ex.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</b> (exactly 30 days after discharge). Set by the server — not editable.
-      </Banner>
-      <Card style={{ textAlign: "center", padding: 36 }}>
-        <p className="muted">The secure patient link and 6-digit code are being connected next.</p>
-      </Card>
-      <div className="cp-bar"><Button variant="ghost" onClick={onBack}>Back to translate</Button><span className="cp-bar-sp" /></div>
+      <h1>{published ? "Published to patient" : "Ready to publish"}</h1>
+      <div className="cp-grid2" style={{ marginTop: 14 }}>
+        <Card>
+          <h3 className="muted">Patient link</h3>
+          {issued ? (
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6 }}>
+              <code className="tn" style={{ background: "var(--panel)", padding: "8px 12px", borderRadius: 10, flex: 1, wordBreak: "break-all" }}>{issued.link}</code>
+              <Button variant="ghost" size="sm" onClick={() => navigator.clipboard.writeText(issued.link).then(() => toast("Link copied."), () => toast("Copy failed; select the link instead."))}>
+                <Copy size={14} aria-hidden="true" />
+                Copy
+              </Button>
+            </div>
+          ) : (
+            <p className="muted" style={{ marginTop: 6 }}>{published ? "The link is shown only when it is issued. Issue a new code to get a new link." : "A secure link is created when you publish."}</p>
+          )}
+          <p style={{ margin: "16px 0 0" }}>Languages: <b>English</b></p>
+        </Card>
+        <div>
+          {issued ? (
+            <Banner tone="blue" icon="lock">
+              <Chip tone="blue">Demo: no text message is sent</Chip>
+              <div style={{ fontSize: 16, marginTop: 6 }}>
+                Give the patient this code: <b className="tn" style={{ fontSize: 22, letterSpacing: 2 }}>{issued.code.slice(0, 3)}-{issued.code.slice(3)}</b>
+              </div>
+              <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Shown once. It works until the plan expires; 5 wrong tries lock the link.</div>
+            </Banner>
+          ) : null}
+          <Banner tone="amber" icon="clock">
+            This plan expires on <b>{dt}</b> at <b>{tm}</b> (exactly 30 days after discharge). Set by the server — not editable.
+          </Banner>
+        </div>
+      </div>
+      <div className="cp-bar">
+        <Button variant="ghost" onClick={onBack}>Back to translate</Button>
+        <span className="cp-bar-sp" />
+        {published && <Chip tone="sage"><Check size={14} aria-hidden="true" />Published</Chip>}
+        <Button onClick={publish} disabled={!!busy}>{busy === "Publishing…" ? busy : published ? "Issue a new code" : "Publish to patient"}</Button>
+      </div>
+      <details className="cp-card" style={{ marginTop: 18 }}>
+        <summary>Testing tools (synthetic records only)</summary>
+        <p className="muted">Simulates the end of the 30-day window: the patient link stops working at once and the records are deleted shortly after.</p>
+        <Button variant="red" size="sm" disabled={!!busy} onClick={expire}>{busy === "Expiring…" ? busy : "Simulate 30-day expiry (test)"}</Button>
+      </details>
     </>
   );
 }

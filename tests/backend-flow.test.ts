@@ -32,6 +32,27 @@ describe('Backend orchestration — test doubles only, no live MongoDB/AWS/email
   expect(tables().get('ClinicalPlanModel')![0].extraction).toBeUndefined();
  });
  it('denies enrollment before approval and denies approval with unresolved issues',async()=>{const d=await draft();expect((await call(`discharges/${d.planId}/grant-access`,'POST',{version:1,email:'synthetic@example.com',enrollmentAuthorized:true})).status).toBe(409);expect(doubles.send).not.toHaveBeenCalled();doubles.process.mockResolvedValue({content:generated(),model:{modelId:'test'}});await call(`discharges/${d.planId}/process`,'POST',{});expect((await call(`discharges/${d.planId}/approve`,'POST',{version:2,clinicalReviewConfirmed:true})).status).toBe(422);});
+ it('publishes a secure link and 6-digit code, signs in with the code, and revokes old links on reissue',async()=>{
+  const d=await approved(),pub=await call(`discharges/${d.planId}/publish`,'POST',{});expect(pub.status).toBe(200);expect(pub.body.code).toMatch(/^\d{6}$/);
+  const token=pub.body.link.split('/p/')[1];expect(tables().get('InvitationModel')![0].tokenHash).not.toBe(token);expect(JSON.stringify(tables().get('InvitationModel'))).not.toContain(pub.body.code);
+  expect((await call('patient/link','POST',{token})).body).toEqual({status:'code_required',triesLeft:5});
+  expect((await call('patient/discharge-plan')).status).toBe(401);
+  const wrong=pub.body.code==='000000'?'111111':'000000';expect((await call('patient/link/verify','POST',{token,code:wrong})).body).toEqual({verified:false,triesLeft:4});
+  expect((await call('patient/link/verify','POST',{token,code:pub.body.code})).body.verified).toBe(true);
+  expect(tables().get('InvitationModel')![0].attempts).toBe(0);
+  const plan=await call('patient/discharge-plan');expect(plan.status).toBe(200);expect(plan.body.planId).toBe(d.planId);expect(plan.body.displayName).toBe('Synthetic HF Example');
+  expect((await call('patient/link','POST',{token})).body).toEqual({status:'signed_in'});
+  const again=await call(`discharges/${d.planId}/publish`,'POST',{});expect(again.status).toBe(200);
+  expect((await call('patient/link','POST',{token})).body).toEqual({status:'unavailable'});expect((await call('patient/discharge-plan')).status).toBe(401);
+  expect((await call('patient/link','POST',{token:again.body.link.split('/p/')[1]})).body.status).toBe('code_required');
+ });
+ it('refuses to publish a patient link before clinician approval',async()=>{const d=await draft();expect((await call(`discharges/${d.planId}/publish`,'POST',{})).status).toBe(409);expect(tables().get('InvitationModel')).toEqual([]);});
+ it('locks a link after 5 wrong codes, even for the right code',async()=>{
+  const a=await approved(),pub=await call(`discharges/${a.planId}/publish`,'POST',{}),token=pub.body.link.split('/p/')[1],wrong=pub.body.code==='000000'?'111111':'000000';
+  for(let i=0;i<5;i++)await call('patient/link/verify','POST',{token,code:wrong});
+  expect((await call('patient/link/verify','POST',{token,code:pub.body.code})).body).toEqual({verified:false,triesLeft:0});
+  expect((await call('patient/link','POST',{token})).body).toEqual({status:'locked'});
+ });
  it('approves, grants, activates once, logs in, retrieves only its plan, and denies access after expiry',async()=>{
   const d=await approved(),grant=await call(`discharges/${d.planId}/grant-access`,'POST',{version:3,email:'synthetic@example.com',enrollmentAuthorized:true});expect(grant.status).toBe(200);const sent=doubles.send.mock.calls[0][0],token=new URL(sent.activationUrl).hash.slice('#token='.length);const activation={token,activationCode:grant.body.activationCode,password:'Synthetic-test-password-123'};
   expect((await call('patient/activate','POST',{...activation,activationCode:'00000000'})).status).toBe(401);expect((await call('patient/activate','POST',activation)).status).toBe(200);expect((await call('patient/activate','POST',activation)).status).toBe(401);
