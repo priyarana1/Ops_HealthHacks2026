@@ -1,5 +1,9 @@
 import type { GeneratedContent } from "@/lib/backend/contracts";
-import type { Language, Medication, PlanContent, WarningZone } from "@/types/plan";
+import type { Medication, PlanContent, WarningZone } from "@/types/plan";
+import type { TranslationLanguage } from "@/lib/languages";
+
+/** English or any translation language. */
+export type PlanLanguage = "en" | TranslationLanguage;
 
 /**
  * Converts the backend's reviewed discharge content into the frontend PlanContent shape
@@ -36,21 +40,34 @@ export function shortDiagnosis(texts: string[]): string {
   return [...new Set(names)].slice(0, 3).join(", ");
 }
 
-function frequencyText(m: BackendMedication, lang: Language) {
+function frequencyText(m: BackendMedication, lang: PlanLanguage) {
   // Translated durations carry their own wording ("durante 3 días más"); only English gets "for".
   const duration = m.duration ? (lang !== "en" || /^for\b/i.test(m.duration) ? m.duration : `for ${m.duration}`) : "";
   return [m.frequency, duration].filter(Boolean).join(" ") || undefined;
 }
 
 // Fixed labels shown in the patient's language. The section title matches the sample translations.
-const LABELS: Record<Language, { why: string; stop: string; hold: string }> = {
+const LABELS: Record<PlanLanguage, { why: string; stop: string; hold: string }> = {
   en: { why: "Why you were in the hospital", stop: "Stop taking this.", hold: "Do not take this for now." },
   es: { why: "Por qué estuvo en el hospital", stop: "Deje de tomar este medicamento.", hold: "No tome este medicamento por ahora." },
   zh: { why: "您为什么住院", stop: "停止服用此药。", hold: "暂时不要服用此药。" },
   ar: { why: "لماذا كنت في المستشفى", stop: "توقف عن تناول هذا الدواء.", hold: "لا تتناول هذا الدواء في الوقت الحالي." },
+  pt: { why: "Por que você esteve no hospital", stop: "Pare de tomar este medicamento.", hold: "Não tome este medicamento por enquanto." },
+  ko: { why: "입원하신 이유", stop: "이 약의 복용을 중단하세요.", hold: "당분간 이 약을 복용하지 마세요." },
+  gu: { why: "તમે હોસ્પિટલમાં કેમ હતા", stop: "આ દવા લેવાનું બંધ કરો.", hold: "હમણાં આ દવા ન લો." },
+  hi: { why: "आप अस्पताल में क्यों थे", stop: "यह दवा लेना बंद करें।", hold: "अभी यह दवा न लें।" },
+  tl: { why: "Bakit ka na-ospital", stop: "Itigil ang pag-inom ng gamot na ito.", hold: "Huwag munang inumin ang gamot na ito." },
+  vi: { why: "Lý do bạn nằm viện", stop: "Ngừng dùng thuốc này.", hold: "Tạm thời không dùng thuốc này." },
+  ht: { why: "Poukisa ou te lopital", stop: "Sispann pran medikaman sa a.", hold: "Pa pran medikaman sa a pou kounye a." },
+  pl: { why: "Dlaczego był(a) Pan/Pani w szpitalu", stop: "Proszę przestać przyjmować ten lek.", hold: "Proszę na razie nie przyjmować tego leku." },
+  ru: { why: "Почему вы были в больнице", stop: "Прекратите принимать это лекарство.", hold: "Пока не принимайте это лекарство." },
+  fr: { why: "Pourquoi vous étiez à l'hôpital", stop: "Arrêtez de prendre ce médicament.", hold: "Ne prenez pas ce médicament pour le moment." },
+  it: { why: "Perché è stato in ospedale", stop: "Smetta di prendere questo medicinale.", hold: "Per ora non prenda questo medicinale." },
+  ur: { why: "آپ ہسپتال میں کیوں تھے", stop: "یہ دوا لینا بند کریں۔", hold: "ابھی یہ دوا نہ لیں۔" },
+  bn: { why: "আপনি কেন হাসপাতালে ছিলেন", stop: "এই ওষুধ খাওয়া বন্ধ করুন।", hold: "এখন এই ওষুধ খাবেন না।" },
 };
 
-function toMedication(m: BackendMedication, lang: Language, english: BackendMedication): Medication {
+function toMedication(m: BackendMedication, lang: PlanLanguage, english: BackendMedication): Medication {
   let note = cleanProse(m.plainLanguage) || undefined;
   // A translated status label ("NUEVO:") is dropped only where the English had one ("NEW:").
   if (lang !== "en" && note && /^\s*[•▪◦·*-]?\s*(NEW|CONTINUE|CHANGED?|STOP(?:PED)?|HOLD|HELD)\s*:/i.test(english.plainLanguage)) note = note.replace(/^[^:：]{1,15}[:：]\s*/, "") || note;
@@ -61,6 +78,7 @@ function toMedication(m: BackendMedication, lang: Language, english: BackendMedi
   return {
     name: m.formulation && !m.name.toLowerCase().includes(m.formulation.toLowerCase()) ? `${m.name} (${m.formulation})` : m.name,
     dose: m.dose ?? undefined,
+    tabletCount: m.tabletCount,
     route: m.route ?? undefined,
     frequency: frequencyText(m, lang),
     note,
@@ -71,7 +89,7 @@ function toMedication(m: BackendMedication, lang: Language, english: BackendMedi
  * `content` may be a translation of `english` (same structure, translated prose); fixed labels
  * follow `lang`. For English, both are the same content.
  */
-export function toPlanContent(content: GeneratedContent, lang: Language = "en", english: GeneratedContent = content): PlanContent {
+export function toPlanContent(content: GeneratedContent, lang: PlanLanguage = "en", english: GeneratedContent = content): PlanContent {
   const med = (status: (m: BackendMedication) => boolean) =>
     content.medications.map((m, i) => [m, english.medications[i] ?? m] as const).filter(([m]) => status(m)).map(([m, e]) => toMedication(m, lang, e));
   const items = (list: { text: string }[]) => list.flatMap((i) => splitItems(i.text));

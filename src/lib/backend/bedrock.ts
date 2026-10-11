@@ -12,7 +12,12 @@ export interface ClinicalProcessor {process(sources:SourceProvenance[],onExtract
 export const clinicalProcessor:ClinicalProcessor={async process(sources,onExtracted){
  // The judges' Example 1 summary uses the pre-reviewed fixture (see demo-fixture.ts) instead of the AI.
  const fixture=demoFixtureContent(sources);
- if(fixture){const model={modelId:DEMO_FIXTURE_MODEL,region:'none',generatedAt:new Date(),pipelineVersion:'pre-reviewed-demo-fixture'};if(onExtracted)await onExtracted(fixture,model);return {content:fixture,model};}
+ if(fixture){
+  // Presentation delay so the fixture takes about as long as a live run (DEMO_FIXTURE_DELAY_MS, default 25 s; 0 disables).
+  const delay=Number(process.env.DEMO_FIXTURE_DELAY_MS ?? 25000);
+  if(delay>0)await new Promise(resolve=>setTimeout(resolve,Math.min(delay,120000)));
+  const model={modelId:DEMO_FIXTURE_MODEL,region:'none',generatedAt:new Date(),pipelineVersion:'pre-reviewed-demo-fixture'};if(onExtracted)await onExtracted(fixture,model);return {content:fixture,model};
+ }
  const client=modelClient(),{modelId,region}=client;let feedback='',lastDetail='',previousOutput='';
  const string={type:'string'},nullableString={type:['string','null']};
  const object=(properties:Record<string,unknown>)=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});

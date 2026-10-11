@@ -32,7 +32,7 @@ describe('Validator false alarms on real discharge PDFs',()=>{
  it('counts the dose field as shown to the patient',()=>expect(validateClinical({...blank,medications:[med]},[src]).map(w=>w.id)).not.toContain('quantity-0'));
  it('does not require background sections to repeat every number or qualifier',()=>expect(validateClinical({...blank,definitions:[{term:'Furosemide',meaning:'A water pill.',evidence:{sourceId:id,quote}}]},[src])).toEqual([]));
  it('still flags an instruction that drops a number',()=>expect(validateClinical({...blank,dailyActions:[{text:'Take your water pill.',evidence:{sourceId:id,quote}}]},[src]).map(w=>w.id)).toContain('quantity-0'));
- it('treats a missing route alone as a warning but a missing dose as critical',()=>{const severity=(m:GeneratedContent['medications'][number])=>validateClinical({...blank,medications:[m]},[src]).find(w=>w.id==='medication-0')?.severity;expect(severity({...med,route:null})).toBe('warning');expect(severity({...med,dose:null})).toBe('critical');});
+ it('does not flag a missing route alone, but blocks a missing dose',()=>{const severity=(m:GeneratedContent['medications'][number])=>validateClinical({...blank,medications:[m]},[src]).find(w=>w.id==='medication-0')?.severity;expect(severity({...med,route:null})).toBeUndefined();expect(severity({...med,dose:null})).toBe('critical');});
 });
 describe('Quote matching ignores typography only',()=>{
  const id='12345678-1234-4234-8234-123456789012',text="Spironolactone — held pending repeat renal function. Weigh daily per the physician's plan.";

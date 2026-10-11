@@ -7,7 +7,8 @@ function match(row:Row,filter:Row):boolean{return Object.entries(filter).every((
  const actual=value(row,k);if(w && typeof w==='object' && !(w instanceof Date))return Object.entries(w).every(([op,v])=>op==='$gt'?Number(actual)>Number(v):op==='$lt'?Number(actual)<Number(v):op==='$lte'?Number(actual)<=Number(v):op==='$gte'?Number(actual)>=Number(v):op==='$in'?(v as unknown[]).includes(actual):op==='$exists'?(actual!==undefined)===v:false);
  return actual===w;
 });}
-function update(row:Row,changes:Row){for(const [k,v] of Object.entries(changes.$set as Row || {}))row[k]=v;for(const k of Object.keys(changes.$unset as Row || {}))delete row[k];for(const [k,v] of Object.entries(changes.$inc as Row || {}))row[k]=Number(row[k] || 0)+Number(v);}
+function assign(row:Row,key:string,v:unknown){const parts=key.split('.'),last=parts.pop()!;let target=row;for(const p of parts)target=(target[p] && typeof target[p]==='object'?target[p]:target[p]={}) as Row;target[last]=v;}
+function update(row:Row,changes:Row){for(const [k,v] of Object.entries(changes.$set as Row || {}))assign(row,k,v);for(const k of Object.keys(changes.$unset as Row || {}))delete row[k];for(const [k,v] of Object.entries(changes.$inc as Row || {}))row[k]=Number(row[k] || 0)+Number(v);}
 const doc=(row:Row)=>row?Object.assign(structuredClone(row),{toObject:()=>structuredClone(row)}):null;
 function query(run:()=>unknown){return {then:(resolve:(v:unknown)=>unknown,reject?:(e:unknown)=>unknown)=>Promise.resolve().then(run).then(resolve,reject),session(){return this;},sort(){return this;},limit(){return this;},select(){return this;},lean(){return this;}};}
 export function memoryDatabase(){const tables=new Map<string,Row[]>();return {tables,model(name:string){const rows:Row[]=[];tables.set(name,rows);return {

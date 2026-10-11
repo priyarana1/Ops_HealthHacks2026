@@ -8,6 +8,7 @@ import {
   Home,
   Pill,
   ListChecks,
+  ClipboardPen,
   MessageCircle,
   Lock,
   AlertTriangle,
@@ -71,6 +72,8 @@ export function PatientApp({ expired = false, data = DEMO_DATA, verify, signedIn
   const [lang, setLang] = useState<Language>("en");
   const [screen, setScreen] = useState<Screen>(expired ? "expired" : signedIn ? "home" : "otp");
   const [done, setDone] = useState<Record<string, boolean>>({});
+  // Support plan members, kept here so they survive switching tabs (on screen only; nothing is stored or sent).
+  const [members, setMembers] = useState<SupportMember[]>([]);
   const [calling, setCalling] = useState<string | null>(null);
   const [sos, setSos] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -188,7 +191,7 @@ export function PatientApp({ expired = false, data = DEMO_DATA, verify, signedIn
           )}
           {screen === "todo" && <TodoScreen lang={lang} go={setScreen} call={call} done={done} setDone={setDone} />}
           {screen === "articles" && <ArticlesScreen lang={lang} go={setScreen} />}
-          {screen === "profile" && <ProfileScreen lang={lang} changeLang={changeLang} />}
+          {screen === "profile" && <ProfileScreen lang={lang} changeLang={changeLang} members={members} setMembers={setMembers} />}
           {screen === "chat" && <ChatScreen lang={lang} setSos={setSos} call={call} />}
           {screen === "checkin" && <CheckinScreen onClose={() => setScreen("todo")} />}
           {screen === "expired" && (
@@ -439,7 +442,7 @@ function HomeScreen({
       </div>
       <div className="pt-home-actions">
         <button className="pt-linkcard" type="button" onClick={() => go("todo")}><ListChecks size={28} aria-hidden="true" /><span><b>{ARTICLE_COPY[lang].todo}</b></span><ChevronRight size={24} className="go" aria-hidden="true" /></button>
-        <button className="pt-linkcard" type="button" onClick={() => go("checkin")}><ListChecks size={28} aria-hidden="true" /><span><b>{{ en: "Bring me to my questionnaire", es: "Ir a mi cuestionario", zh: "查看我的问卷", ar: "انتقل إلى استبياني" }[lang]}</b></span><ChevronRight size={24} className="go" aria-hidden="true" /></button>
+        <button className="pt-linkcard" type="button" onClick={() => go("checkin")}><ClipboardPen size={28} aria-hidden="true" /><span><b>{{ en: "Bring me to my questionnaire", es: "Ir a mi cuestionario", zh: "查看我的问卷", ar: "انتقل إلى استبياني" }[lang]}</b></span><ChevronRight size={24} className="go" aria-hidden="true" /></button>
       </div>
       <RecommendedTips lang={lang} />
     </section>
@@ -595,7 +598,7 @@ function MedsScreen({ t, lang }: {
       <div className="pt-dose-list">
         {selectedMeds.length === 0 && <p className="pt-no-doses">{copy.none}</p>}
         {selectedMeds.map((m) => <article className="pt-dose-card" key={m.name}>
-          <div className="pt-dose-main"><Pill size={22} aria-hidden="true" /><div><h3><bdi dir="ltr">{m.name}</bdi></h3><p className="pt-dose-frequency">{m.frequency}</p></div><div className="pt-dose-value"><span>{cardCopy.dose}</span><bdi className="pt-dose-amount">{m.tabletCount ? pillCountLabel(m.tabletCount, lang) : cardCopy.label}</bdi></div></div>
+          <div className="pt-dose-main"><Pill size={22} aria-hidden="true" /><div><h3><bdi dir="ltr">{m.name}</bdi></h3><p className="pt-dose-frequency">{m.frequency}</p></div><div className="pt-dose-value"><span>{cardCopy.dose}</span><bdi className="pt-dose-amount">{m.tabletCount ? pillCountLabel(m.tabletCount, lang) : m.dose ?? cardCopy.label}</bdi></div></div>
           <button className="pt-medicine-help" type="button" aria-label={`${helpCopy.button}: ${m.name}`} aria-haspopup="dialog" onClick={() => setHelpMedicine(m.name)}><CircleHelp size={28} aria-hidden="true" /><span>{helpCopy.button}</span></button>
           {m.note && !["Furosemide", "Losartan", "Empagliflozin", ...safetyNoteNames].includes(m.name) && <p className="pt-dose-important">{m.note}</p>}
         </article>)}
@@ -605,7 +608,7 @@ function MedsScreen({ t, lang }: {
         {helpMed && <>
           <h2 id="medicine-help-title" tabIndex={-1}><bdi dir="ltr">{helpMed.name}</bdi></h2>
           <dl className="pt-medicine-help-facts">
-            <div><dt>{cardCopy.dose}</dt><dd>{helpMed.tabletCount ? pillCountLabel(helpMed.tabletCount, lang) : cardCopy.label}</dd></div>
+            <div><dt>{cardCopy.dose}</dt><dd>{helpMed.tabletCount ? pillCountLabel(helpMed.tabletCount, lang) : helpMed.dose ?? cardCopy.label}</dd></div>
             <div><dt>{helpCopy.when}</dt><dd>{helpMed.frequency}</dd><dd>{medPeriods(helpMed).map((key) => { const time = slots.find((item) => item.key === key)!; return `${copy[key]} · ${time.time}`; }).join(" / ")}</dd></div>
             {helpMed.purpose && <div><dt>{cardCopy.purpose}</dt><dd>{helpMed.purpose}</dd></div>}
             {helpMed.route && <div><dt>{cardCopy.route}</dt><dd>{helpMed.route}</dd></div>}
@@ -686,21 +689,47 @@ function DailyChecklist({ lang, done, setDone, onCheckin }: { onCheckin: () => v
 }
 
 const PROFILE_COPY = {
-  en: { title: "Profile", info: "Your information", age: "Age", years: "years", condition: "Heart failure", language: "Language", full: "Your full discharge plan", intro: "Your care instructions in simple words.", daily: "Each day", visits: "Your follow-up", urgent: "Get urgent help · Call 911 for an emergency", team: "Call your heart care team", avoid: "Do not take ibuprofen or other NSAIDs unless your treating clinician approves them.", weigh: "Weigh yourself", hold: "Ask your care team before restarting a medicine on hold." },
-  es: { title: "Perfil", info: "Su información", age: "Edad", years: "años", condition: "Insuficiencia cardíaca", language: "Idioma", full: "Su plan completo de alta", intro: "Sus instrucciones en palabras sencillas.", daily: "Cada día", visits: "Su seguimiento", urgent: "Busque ayuda urgente · Llame al 911 en una emergencia", team: "Llame a su equipo de atención cardíaca", avoid: "No tome ibuprofeno ni otros AINE sin la aprobación de su médico tratante.", weigh: "Pésese", hold: "Consulte a su equipo antes de volver a tomar un medicamento suspendido." },
-  zh: { title: "个人资料", info: "您的信息", age: "年龄", years: "岁", condition: "心力衰竭", language: "语言", full: "完整出院计划", intro: "用简单语言解释的护理指导。", daily: "每天", visits: "复诊", urgent: "寻求紧急帮助——紧急情况下拨打911", team: "联系心脏护理团队", avoid: "未经主治医生批准，请勿服用布洛芬或其他非甾体抗炎药。", weigh: "称体重", hold: "恢复服用暂停的药物前，请咨询护理团队。" },
-  ar: { title: "الملف", info: "معلوماتك", age: "العمر", years: "سنة", condition: "قصور القلب", language: "اللغة", full: "خطة الخروج الكاملة", intro: "تعليمات الرعاية بكلمات بسيطة.", daily: "كل يوم", visits: "المتابعة", urgent: "اطلب مساعدة عاجلة — اتصل بـ 911 في الطوارئ", team: "اتصل بفريق رعاية القلب", avoid: "لا تتناول إيبوبروفين أو مضادات الالتهاب غير الستيرويدية الأخرى إلا بموافقة الطبيب المعالج.", weigh: "زن نفسك", hold: "اسأل فريق الرعاية قبل استئناف دواء تم إيقافه مؤقتاً." },
+  en: { title: "Profile", info: "Your information", age: "Age", years: "years", condition: "Heart failure", language: "Language", full: "Your full discharge plan", intro: "Your care instructions in simple words.", daily: "Each day", visits: "Your follow-up", urgent: "Get urgent help · Call 911 for an emergency", team: "Call your heart care team", avoid: "Do not take ibuprofen or other NSAIDs unless your treating clinician approves them.", weigh: "Weigh yourself", hold: "Ask your care team before restarting a medicine on hold.", support: "Add Member to my Support Plan", name: "Name", phone: "Phone number", enroll: "Enroll", enrolled: "Enrolled", remove: "Remove" },
+  es: { title: "Perfil", info: "Su información", age: "Edad", years: "años", condition: "Insuficiencia cardíaca", language: "Idioma", full: "Su plan completo de alta", intro: "Sus instrucciones en palabras sencillas.", daily: "Cada día", visits: "Su seguimiento", urgent: "Busque ayuda urgente · Llame al 911 en una emergencia", team: "Llame a su equipo de atención cardíaca", avoid: "No tome ibuprofeno ni otros AINE sin la aprobación de su médico tratante.", weigh: "Pésese", hold: "Consulte a su equipo antes de volver a tomar un medicamento suspendido.", support: "Agregar un miembro a mi plan de apoyo", name: "Nombre", phone: "Número de teléfono", enroll: "Inscribir", enrolled: "Inscrito", remove: "Quitar" },
+  zh: { title: "个人资料", info: "您的信息", age: "年龄", years: "岁", condition: "心力衰竭", language: "语言", full: "完整出院计划", intro: "用简单语言解释的护理指导。", daily: "每天", visits: "复诊", urgent: "寻求紧急帮助——紧急情况下拨打911", team: "联系心脏护理团队", avoid: "未经主治医生批准，请勿服用布洛芬或其他非甾体抗炎药。", weigh: "称体重", hold: "恢复服用暂停的药物前，请咨询护理团队。", support: "添加支持计划成员", name: "姓名", phone: "电话号码", enroll: "登记", enrolled: "已登记", remove: "移除" },
+  ar: { title: "الملف", info: "معلوماتك", age: "العمر", years: "سنة", condition: "قصور القلب", language: "اللغة", full: "خطة الخروج الكاملة", intro: "تعليمات الرعاية بكلمات بسيطة.", daily: "كل يوم", visits: "المتابعة", urgent: "اطلب مساعدة عاجلة — اتصل بـ 911 في الطوارئ", team: "اتصل بفريق رعاية القلب", avoid: "لا تتناول إيبوبروفين أو مضادات الالتهاب غير الستيرويدية الأخرى إلا بموافقة الطبيب المعالج.", weigh: "زن نفسك", hold: "اسأل فريق الرعاية قبل استئناف دواء تم إيقافه مؤقتاً.", support: "إضافة عضو إلى خطة الدعم الخاصة بي", name: "الاسم", phone: "رقم الهاتف", enroll: "تسجيل", enrolled: "مسجَّل", remove: "إزالة" },
 };
 
-function ProfileScreen({ lang, changeLang }: { lang: Language; changeLang: (lang: Language) => void }) {
+type SupportMember = { name: string; phone: string };
+
+function ProfileScreen({ lang, changeLang, members, setMembers }: { lang: Language; changeLang: (lang: Language) => void; members: SupportMember[]; setMembers: React.Dispatch<React.SetStateAction<SupportMember[]>> }) {
   const copy = PROFILE_COPY[lang];
   const content = usePlanContent(lang);
   const data = usePatientData();
   const t = UI[lang];
+  const [name, setName] = useState(""), [phone, setPhone] = useState("");
+  const digits = phone.replace(/\D/g, "");
+  const memberOk = name.trim().length > 0 && /^\+?[\d\s().-]+$/.test(phone.trim()) && digits.length >= 7 && digits.length <= 15 && !members.some((m) => m.phone.replace(/\D/g, "") === digits);
+  function enroll(event: React.FormEvent) {
+    event.preventDefault();
+    if (!memberOk) return;
+    setMembers((list) => [...list, { name: name.trim(), phone: phone.trim() }]);
+    setName(""); setPhone("");
+  }
   return <section aria-labelledby="profile-title">
     <h1 id="profile-title">{copy.title}</h1>
     <section className="pt-card pt-profile-info"><UserRound size={28} aria-hidden="true" /><div><h2>{data.name}</h2>{data.age != null && <p>{copy.age}: {data.age} {copy.years}</p>}<p>{data.demo ? copy.condition : data.diagnosis}</p></div></section>
     <section className="pt-card"><h2>{copy.language}</h2><label className="pt-language-setting"><span className="sr-only">{copy.language}</span><select value={lang} onChange={(event) => changeLang(event.target.value as Language)} aria-label={copy.language}>{(Object.keys(LANGUAGE_LABELS) as Language[]).filter((key) => data.content[key]).map((key) => <option key={key} value={key} lang={key}>{LANGUAGE_LABELS[key]}</option>)}</select></label></section>
+    <section className="pt-card" aria-labelledby="support-title">
+      <h2 id="support-title">{copy.support}</h2>
+      <form className="pt-support-form" onSubmit={enroll}>
+        <label className="sr-only" htmlFor="support-name">{copy.name}</label>
+        <input id="support-name" type="text" autoComplete="name" placeholder={copy.name} value={name} onChange={(event) => setName(event.target.value)} maxLength={60} />
+        <label className="sr-only" htmlFor="support-phone">{copy.phone}</label>
+        <input id="support-phone" type="tel" inputMode="tel" autoComplete="tel" dir="ltr" placeholder={copy.phone} value={phone} onChange={(event) => setPhone(event.target.value)} />
+        <button type="submit" className="pt-btn pt-btn--sm" disabled={!memberOk}>{copy.enroll}</button>
+      </form>
+      {members.length > 0 && <ul className="pt-support-list">{members.map((member) => <li key={member.phone}>
+        <span className="pt-support-member"><b>{member.name}</b><bdi dir="ltr">{member.phone}</bdi></span>
+        <span className="pt-support-enrolled"><Check size={18} aria-hidden="true" />{copy.enrolled}</span>
+        <button type="button" className="pt-btn pt-btn--sm pt-btn--ghost" onClick={() => setMembers((list) => list.filter((m) => m !== member))} aria-label={`${copy.remove} ${member.name}`}>{copy.remove}</button>
+      </li>)}</ul>}
+    </section>
     <details className="pt-profile-discharge" open>
       <summary>{copy.full}</summary><p className="muted">{copy.intro}</p>
       <section><h2>{content.whyTitle}</h2><p>{content.why}</p></section>
@@ -728,36 +757,22 @@ function TodoScreen({ lang, go, call, done, setDone }: { go: (screen: Screen) =>
         <div className="pt-card" key={a.type}>
           <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
             <Calendar size={30} aria-hidden="true" />
-            <div>
+            <div style={{ minWidth: 0 }}>
               <h3>{a.type}</h3>
               <p className="lead" style={{ margin: 0 }}>
                 {a.when}
               </p>
-              {!a.scheduleNeeded && <p style={{ margin: "12px 0 0" }}><span className="cp-chip cp-chip--sage"><Check size={18} aria-hidden="true" />{{ en: "Scheduled", es: "Programada", zh: "已预约", ar: "تم تحديد الموعد" }[lang]}</span></p>}
-              {a.scheduleNeeded && (
-                <p style={{ margin: "8px 0 12px" }}>
-                  <span className="cp-chip cp-chip--amber">
-                    <AlertTriangle size={18} aria-hidden="true" />
-                    No date yet. Call to set.
-                  </span>
-                </p>
-              )}
+              <p style={{ margin: "10px 0 0" }}><span className="cp-chip cp-chip--sage"><Check size={18} aria-hidden="true" />{{ en: "Scheduled", es: "Programada", zh: "已预约", ar: "تم تحديد الموعد" }[lang]}</span></p>
+              <div className="pt-appointment-contact">
+                {a.clinic && <p className="pt-appointment-clinic">{a.clinic}</p>}
+                {a.location && (a.mapsUrl
+                  ? <a href={a.mapsUrl} target="_blank" rel="noopener noreferrer"><MapPin size={22} aria-hidden="true" /><span>{a.location}</span></a>
+                  : <p><MapPin size={22} aria-hidden="true" /><span>{a.location}</span></p>)}
+                {a.phone && <button className="pt-appointment-phone" type="button" onClick={() => call(a.phone!)}><Phone size={22} aria-hidden="true" /><span>{a.phone}</span></button>}
+                {a.website && <a href={a.website} target="_blank" rel="noopener noreferrer">{{ en: "View clinic information", es: "Ver información de la clínica", zh: "查看诊所信息", ar: "عرض معلومات العيادة" }[lang]}<ExternalLink size={20} aria-hidden="true" /></a>}
+              </div>
             </div>
           </div>
-          <div className="pt-appointment-contact">
-            {a.location && <p><MapPin size={22} aria-hidden="true" /><span>{a.location}</span></p>}
-            {a.phone && <button className="pt-appointment-phone" type="button" onClick={() => call(a.phone!)}><Phone size={22} aria-hidden="true" /><span>{a.phone}</span></button>}
-            {a.website && <a href={a.website} target="_blank" rel="noopener noreferrer">{{ en: "View clinic information", es: "Ver información de la clínica", zh: "查看诊所信息", ar: "عرض معلومات العيادة" }[lang]}<ExternalLink size={20} aria-hidden="true" /></a>}
-          </div>
-          {a.scheduleNeeded && (
-            <button
-              className="pt-btn pt-btn--sm pt-btn--ghost"
-              type="button"
-              onClick={() => call("Care team")}
-            >
-              Call to set
-            </button>
-          )}
         </div>
       ))}
     </section>

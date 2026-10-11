@@ -62,7 +62,11 @@ export const appointmentSchema = z.object({
   type: z.string(),
   specialty: z.string().optional(),
   when: z.string().optional(),
+  /** Clinic or lab name, shown above the address. */
+  clinic: z.string().optional(),
   location: z.string().optional(),
+  /** Map link for the address. */
+  mapsUrl: z.string().url().optional(),
   phone: z.string().optional(),
   website: z.string().url().optional(),
   prep: z.string().optional(),

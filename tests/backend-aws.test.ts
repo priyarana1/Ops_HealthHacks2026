@@ -5,6 +5,7 @@ vi.mock('../src/lib/backend/dependencies',()=>({optionalDependency:mocked.load})
 import { clinicalProcessor } from '../src/lib/backend/bedrock';
 import {extractionInputSchema} from '../src/lib/backend/extraction';
 import { emailDelivery } from '../src/lib/backend/email';
+import { SIMPLIFICATION_PROMPT_VERSION } from '../src/lib/backend/prompts';
 beforeEach(()=>{vi.stubEnv('AWS_REGION','us-east-1');vi.stubEnv('BEDROCK_MODEL_ID','synthetic-test-model');vi.stubEnv('SES_FROM_EMAIL','verified-test@example.com');mocked.send.mockReset();mocked.load.mockReset();});
 afterEach(()=>vi.unstubAllEnvs());
 describe('AWS adapters with explicit service doubles',()=>{
@@ -39,7 +40,7 @@ describe('AWS adapters with explicit service doubles',()=>{
   const payload=JSON.parse(simplifier.messages[0].content[0].text);
   expect(payload.clinicalContext.medications[0].route).toBe('PO');
   expect(payload.outputSchema.properties.flags).toBeDefined();
-  expect(result.model.promptVersion).toBe('discharge-simplification-v2');
+  expect(result.model.promptVersion).toBe(SIMPLIFICATION_PROMPT_VERSION);
  });
  it('fails closed when SES is unconfigured or rejects mail',async()=>{vi.stubEnv('SES_FROM_EMAIL','');await expect(emailDelivery.sendInvitation({to:'synthetic@example.com',activationUrl:'https://example.com/#token=synthetic',validUntil:new Date()})).rejects.toThrow('Configure');vi.stubEnv('SES_FROM_EMAIL','verified-test@example.com');mocked.load.mockReturnValue({SESv2Client:class{async send(){throw new Error('Denied');}},SendEmailCommand:class{constructor(public input:unknown){}}});await expect(emailDelivery.sendInvitation({to:'synthetic@example.com',activationUrl:'https://example.com/#token=synthetic',validUntil:new Date()})).rejects.toThrow('email delivery failed');});
  it('sends a non-clinical invitation and requires SES acceptance',async()=>{const send=vi.fn(async()=>({MessageId:'synthetic-service-fixture'}));mocked.load.mockReturnValue({SESv2Client:class{send=send;},SendEmailCommand:class{constructor(public input:unknown){}}});await emailDelivery.sendInvitation({to:'synthetic@example.com',activationUrl:'https://example.com/#token=synthetic',validUntil:new Date()});const input=send.mock.calls[0] as unknown as [{input:Record<string,unknown>}];expect(JSON.stringify(input)).toContain('Your ClearPath invitation');expect(JSON.stringify(input)).not.toContain('heart failure');});

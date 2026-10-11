@@ -55,10 +55,14 @@ Use the scripted demo as a fallback if the AI is slow during a live demo. The co
    invents pill counts; the original wording is kept instead.
 3. **Review.** Source document next to the patient preview, reading level, and review flags. The clinician
    marks flags reviewed, confirms the discharge time, and approves.
-4. **Translate (optional).** Spanish, Mandarin or Arabic, one click each (about a minute). Medicine names and
+4. **Translate (optional).** The nurse ticks the patient's languages from a checklist of 16 common ones and
+   translates them (about a minute each). Medicine names and
    doses are never translated. Each line is checked in code (numbers, units, medicine names), translated back
    to English independently, and compared with the approved plan. A mismatch blocks that language until the
-   clinician re-translates or edits the line; then they publish it. Patients only see published languages.
+   clinician re-translates or edits the line; then they publish it. Patients only see published languages;
+   the patient app has a translated interface for Spanish, Mandarin and Arabic, so those three are offered there.
+   A published translation is stored in `plantranslations` and copied onto the plan record
+   (`clinicaldischargeplans.translations.<lang>`); any change to the English plan removes that copy.
    This is a safety net, not certification: real use needs review by a qualified medical interpreter.
 5. **Publish.** Creates the patient link and a 6-digit code (shown once to the nurse). The code works until
    the plan expires; 5 wrong tries lock the link; issuing a new code revokes the old link.
@@ -67,6 +71,18 @@ Use the scripted demo as a fallback if the AI is slow during a live demo. The co
    answers.
 7. **Expiry.** Access ends exactly 30 days after discharge; MongoDB deletes the records afterwards. The
    Publish step has a **Simulate 30-day expiry** test button.
+
+## Demo fixture (Example 1)
+
+For the judges' Example 1 summary only (`sample-data/discharge-pdfs/Patient_1_HFrEF_Pneumonia_AKI.pdf`),
+processing returns a pre-reviewed, hand-written plan instead of calling the AI, and translating it to Spanish
+returns a hand-written Spanish version (`src/lib/backend/demo-fixture.ts`). Every line cites exact text from the PDF and
+passes the same validator as AI output; the database records it with model `demo-fixture`. Processing waits `DEMO_FIXTURE_DELAY_MS` (default 25 s; set 0 while rehearsing) so it takes about as long as a live run; translating to Spanish waits `DEMO_TRANSLATION_DELAY_MS` (default 35 s).
+The Spanish is used only while the English wording is unedited; otherwise the live translation pipeline runs.
+For this plan, other languages ticked in the wizard are only shown as translated after the same wait (nothing is
+translated or stored, and the patient app does not offer them). Upload, storage,
+review, approval, publishing, the patient link and code, the patient app and expiry are all real. Any other
+document goes through the live AI pipeline.
 
 ## Checks
 

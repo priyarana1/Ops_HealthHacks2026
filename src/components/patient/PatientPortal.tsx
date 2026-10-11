@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { PatientApp, type CodeCheck, type PatientData } from "@/components/patient/PatientApp";
 import { shortDiagnosis, toPlanContent } from "@/lib/plan-adapter";
 import type { GeneratedContent } from "@/lib/backend/contracts";
-import type { Language } from "@/types/plan";
+import { LANGS, type Language } from "@/types/plan";
+import { withScheduledAppointments } from "@/lib/demo-appointments";
 
 /**
  * Real patient entry for /p/<token>: asks the server about the link, verifies the 6-digit code,
@@ -32,9 +33,12 @@ export function PatientPortal({ token }: { token: string }) {
     const plan: { displayName: string | null; expiresAt: string; content: GeneratedContent; translations?: Partial<Record<Language, GeneratedContent>> } = await response.json();
     const name = plan.displayName || "there";
     const diagnosis = shortDiagnosis(plan.content.diagnoses.map((d) => d.text));
-    // English plus every clinician-published translation; the language picker offers only these.
-    const translated = Object.entries(plan.translations ?? {}).map(([lang, content]) => [lang, toPlanContent(content!, lang as Language, plan.content)]);
-    setData({ name, firstName: name.split(" ")[0], diagnosis, expiresAt: plan.expiresAt, content: { en: toPlanContent(plan.content), ...Object.fromEntries(translated) }, demo: false });
+    // English plus every clinician-published translation the app has an interface for; the language picker offers only these.
+    // Appointments are shown as booked at RWJBarnabas Health locations (demo-appointments.ts).
+    const english = toPlanContent(plan.content);
+    const scheduled = (content: GeneratedContent, lang: Language) => withScheduledAppointments(toPlanContent(content, lang, plan.content), english, plan.expiresAt, lang);
+    const translated = Object.entries(plan.translations ?? {}).filter(([lang]) => (LANGS as readonly string[]).includes(lang)).map(([lang, content]) => [lang, scheduled(content!, lang as Language)]);
+    setData({ name, firstName: name.split(" ")[0], diagnosis, expiresAt: plan.expiresAt, content: { en: scheduled(plan.content, "en"), ...Object.fromEntries(translated) }, demo: false });
   }, []);
 
   useEffect(() => {

@@ -27,7 +27,7 @@ export function demoFixtureContent(sources:SourceProvenance[]):GeneratedContent|
  const source=demoFixtureSource(sources);if(!source)return undefined;
  const ev=(quote:string)=>{if(!source.text.includes(quote))throw new AppError(500,'Demo fixture quote not found in the source.');return {sourceId:source.sourceId,quote};};
  const item=(text:string,quote:string)=>({text,evidence:ev(quote)});
- const med=(name:string,status:Med['status'],fields:Partial<Pick<Med,'dose'|'route'|'frequency'|'duration'>>,plainLanguage:string,quote:string):Med=>({name,dose:null,route:null,frequency:null,duration:null,formulation:null,...fields,status,notes:'',plainLanguage,evidence:ev(quote)});
+ const med=(name:string,status:Med['status'],fields:Partial<Pick<Med,'dose'|'route'|'frequency'|'duration'>>,plainLanguage:string,quote:string):Med=>({name,dose:null,route:null,frequency:null,duration:null,formulation:null,...fields,status,notes:'',plainLanguage,evidence:ev(quote),...(status==='NEW' || status==='CONTINUE'?{tabletCount:1}:{})});
  const urgent=(text:string,quote:string)=>({text,level:'URGENT' as const,evidence:ev(quote)});
  const content:GeneratedContent={
   language:'en',
@@ -49,18 +49,14 @@ export function demoFixtureContent(sources:SourceProvenance[]):GeneratedContent|
    med('Metformin','CONTINUE',{dose:'500 mg',frequency:'twice daily'},'For your blood sugar. Keep taking it, provided your kidney tests stay steady.','Metformin 500 mg twice daily, provided renal function remains stable.'),
    med('Lisinopril','STOP',{},'Stop taking this. Losartan takes its place. Do not take both.','Lisinopril — discontinued because therapy was changed to losartan.'),
    med('Spironolactone','HOLD',{},'Do not take this for now, pending your next kidney and potassium blood test.','Spironolactone — held pending repeat renal function and potassium.'),
+   // Listed with stopped medicines so it appears under "Do not take these", not as a to-do.
+   med('Ibuprofen/other NSAIDs','STOP',{},'Stop or avoid these pain medicines unless your clinician says it is OK.','Ibuprofen/other NSAIDs — avoid because of heart failure and recent kidney injury.'),
   ],
-  dailyActions:[
-   item('Weigh yourself each morning at about the same time.','Monitor daily weight at approximately the same time each morning.'),
-   item('Write down your weight and how you feel.','Keep a written record of weight and symptoms.'),
-  ],
+  dailyActions:[item('Weigh yourself each morning and write it down.','Monitor daily weight at approximately the same time each morning.\n• Keep a written record of weight and symptoms.')],
   diet:[item('Eat low sodium: about 2 grams of sodium a day.','Follow a low-sodium diet, generally targeting approximately 2 grams of sodium daily.')],
   fluids:[item('Follow the fluid plan provided by your heart care team.','Follow fluid recommendations provided by the heart-failure team.')],
   activity:[],
-  otherInstructions:[
-   item('Finish all of your antibiotic, even if you feel better.','Complete the entire antibiotic course even if feeling better.'),
-   item('Avoid ibuprofen and other NSAIDs unless your clinician says it is OK.','Avoid NSAIDs unless specifically approved by the treating clinician.'),
-  ],
+  otherInstructions:[],
   appointments:[item('See your primary care doctor and heart doctor within about 1 week.','Follow up with primary care and cardiology within approximately 1 week.')],
   labsAndMonitoring:[item('Get a blood test for your kidneys and potassium before or at your first follow-up visit.','Obtain a basic metabolic panel before or at the early outpatient follow-up to reassess creatinine and potassium.')],
   warningSigns:[
@@ -74,9 +70,11 @@ export function demoFixtureContent(sources:SourceProvenance[]):GeneratedContent|
    urgent('Fever or a worse cough even with the antibiotic','Fever or worsening cough despite antibiotics.'),
   ],
   definitions:[],teachBackQuestions:[],practicalBarriers:[],
+  // Review flags check that simplification kept the meaning (id 'review-wording:<field path>').
   issues:[
-   {id:'weight-threshold',severity:'critical',description:'Weight-gain threshold not stated: the summary refers to the individualized weight-management plan but gives no number. Confirm the threshold with the heart-failure team before the patient leaves.',resolution:null},
-   {id:'fluid-limit',severity:'warning',description:'Fluid limit not stated: the summary says to follow the heart-failure team\'s fluid recommendations but gives no amount.',resolution:null},
+   {id:'review-wording:medications.7.plainLanguage',severity:'critical',description:'Metformin: check that the simple wording keeps the condition about kidney function.',resolution:null},
+   {id:'review-wording:medications.9.plainLanguage',severity:'critical',description:'Spironolactone: check that the patient understands it is on hold for now, not stopped, and why.',resolution:null},
+   {id:'review-wording:diet.0.text',severity:'critical',description:'Low-sodium diet: check that "2 grams of sodium" is kept exactly and not turned into salt.',resolution:null},
   ],
  };
  // Same deterministic checks and completeness attestation as AI output.
@@ -91,12 +89,9 @@ export const DEMO_SPANISH:Record<string,string>={
  'diagnoses.0.text':'Insuficiencia cardíaca (su corazón bombea débilmente)',
  'diagnoses.1.text':'Neumonía (una infección del pulmón)',
  'diagnoses.2.text':'Lesión de los riñones, que está mejorando',
- 'dailyActions.0.text':'Pésese cada mañana más o menos a la misma hora.',
- 'dailyActions.1.text':'Anote su peso y cómo se siente.',
+ 'dailyActions.0.text':'Pésese cada mañana y anótelo.',
  'diet.0.text':'Coma bajo en sodio: unos 2 gramos de sodio al día.',
  'fluids.0.text':'Siga el plan de líquidos que le dio su equipo de atención cardíaca.',
- 'otherInstructions.0.text':'Termine todo el antibiótico, aunque se sienta mejor.',
- 'otherInstructions.1.text':'Evite el ibuprofeno y otros AINE, a menos que su médico lo apruebe.',
  'appointments.0.text':'Vea a su médico de cabecera y a su cardiólogo en aproximadamente 1 semana.',
  'labsAndMonitoring.0.text':'Hágase un análisis de sangre de los riñones y el potasio antes o durante su primera cita de control.',
  'warningSigns.0.text':'Aumento rápido de peso, o más hinchazón o falta de aire',
@@ -117,4 +112,5 @@ export const DEMO_SPANISH:Record<string,string>={
  'medications.7.plainLanguage':'Para el azúcar en sangre. Siga tomándolo, siempre que sus análisis de riñón sigan estables.','medications.7.frequency':'dos veces al día',
  'medications.8.plainLanguage':'Deje de tomarlo. Losartan toma su lugar. No tome los dos.',
  'medications.9.plainLanguage':'No lo tome por ahora, hasta su próximo análisis de riñón y potasio.',
+ 'medications.10.plainLanguage':'Deje o evite estos medicamentos para el dolor, a menos que su médico lo apruebe.',
 };

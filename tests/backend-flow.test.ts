@@ -65,13 +65,14 @@ describe('Backend orchestration — test doubles only, no live MongoDB/AWS/email
    return reply({mismatches:mismatch?[{path:payload.items[0].path,problem:'The timing changed.'}]:[]});
   });
   const d=await approved();
-  expect((await call(`discharges/${d.planId}/translations/fr`,'POST')).status).toBe(400);
+  expect((await call(`discharges/${d.planId}/translations/xx`,'POST')).status).toBe(400);
   const es=await call(`discharges/${d.planId}/translations/es`,'POST');expect(es.status).toBe(200);expect(es.body.status).toBe('blocked');
   expect(es.body.fields[0]).toMatchObject({path:'dailyActions.0.text',source:'Weigh daily.',text:'ES Weigh daily.',backTranslation:'Weigh daily.',problems:['The timing changed.']});
   expect((await call(`discharges/${d.planId}/translations/es/publish`,'POST')).status).toBe(422);
   mismatch=false;
   const edited=await call(`discharges/${d.planId}/translations/es`,'PATCH',{path:'dailyActions.0.text',text:'ES Pésese cada día.'});expect(edited.body.status).toBe('verified');
   const published=await call(`discharges/${d.planId}/translations/es/publish`,'POST');expect(published.body).toMatchObject({status:'published',publishedBy:'synthetic-provider',current:true});
+  expect((tables().get('ClinicalPlanModel')![0].translations as Record<string,{content:{dailyActions:{text:string}[]}}>).es.content.dailyActions[0].text).toBe('ES Pésese cada día.');
   expect((await call(`discharges/${d.planId}/translations`)).body.translations.map((t:{language:string;status:string})=>[t.language,t.status])).toEqual([['es','published']]);
   const pub=await call(`discharges/${d.planId}/publish`,'POST',{}),token=pub.body.link.split('/p/')[1];
   await call('patient/link/verify','POST',{token,code:pub.body.code});

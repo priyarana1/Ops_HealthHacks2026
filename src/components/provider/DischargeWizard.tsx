@@ -16,9 +16,10 @@ import { api } from "@/components/client-api";
 import { DocumentDrop, MAX_UPLOAD_BYTES } from "@/components/document-drop";
 import type { GeneratedContent } from "@/lib/backend/contracts";
 import type { Language, PlanContent } from "@/types/plan";
+import { TRANSLATION_LANGUAGES, type TranslationLanguage as TransLang } from "@/lib/languages";
 import { UI } from "@/lib/i18n";
 import { applyTranslation } from "@/lib/translation-fields";
-import { toPlanContent, readingGrade, patientText, plainLanguageSwaps, openMedicationFlags } from "@/lib/plan-adapter";
+import { toPlanContent, type PlanLanguage, readingGrade, patientText, plainLanguageSwaps, openMedicationFlags } from "@/lib/plan-adapter";
 import { planStatus } from "@/lib/discharge-status";
 
 /**
@@ -26,11 +27,29 @@ import { planStatus } from "@/lib/discharge-status";
  * Capture (upload or paste) -> AI draft -> clinician review and approval -> translate -> publish.
  */
 
-// The Translate step is switched off for now; set to true to bring it back (the backend is unchanged).
-const TRANSLATE_STEP = false;
-const STEPS = TRANSLATE_STEP ? ["Capture", "Review", "Translate", "Publish"] : ["Capture", "Review", "Publish"];
+const STEPS = ["Capture", "Review", "Translate", "Publish"];
 type Stage = "capture" | "review" | "translate" | "publish";
 const REVIEWED = "Reviewed against the source document by the approving clinician.";
+// The completeness attestation is recorded by the Approve click rather than shown as a card.
+const ATTESTATION = "source-completeness";
+const WORDING = "review-wording:";
+
+/** The patient wording at a field path, with the source quote it was simplified from. */
+function wordingAt(content: GeneratedContent, path: string) {
+  const keys = path.split(".");
+  let parent: unknown = content;
+  for (const key of keys.slice(0, -1)) parent = (parent as Record<string, unknown> | undefined)?.[key];
+  const holder = parent as ({ evidence?: { quote: string } } & Record<string, unknown>) | undefined;
+  const text = holder?.[keys.at(-1)!];
+  return typeof text === "string" ? { text, quote: holder?.evidence?.quote ?? "" } : null;
+}
+function withWording(content: GeneratedContent, path: string, text: string): GeneratedContent {
+  const next = structuredClone(content), keys = path.split(".");
+  let parent: Record<string, unknown> = next as unknown as Record<string, unknown>;
+  for (const key of keys.slice(0, -1)) parent = parent[key] as Record<string, unknown>;
+  parent[keys.at(-1)!] = text;
+  return next;
+}
 
 interface Snapshot {
   episode: { planId: string; state: string; version: number; dischargeAt: string; dischargeTimezone: string; expiresAt: string; dischargeConfirmed: boolean; approval?: { providerId: string; approvedAt: string } };
@@ -39,8 +58,9 @@ interface Snapshot {
   sources: { sourceId: string; kind: string; documentType: string; text: string }[];
 }
 
-const LANGS = { es: "Spanish", zh: "Mandarin", ar: "Arabic" } as const;
-type TransLang = keyof typeof LANGS;
+const DEMO_FIXTURE_MODEL = "demo-fixture";
+const DEMO_TRANSLATE_MS = 35000;
+const LANGS = Object.fromEntries(Object.entries(TRANSLATION_LANGUAGES).map(([k, v]) => [k, v.name])) as Record<TransLang, string>;
 interface TranslationView {
   language: TransLang; status: "verified" | "blocked" | "published"; current: boolean; basedOnVersion: number; publishedAt?: string;
   fields: { path: string; source: string; text: string; backTranslation?: string; problems: string[] }[];
@@ -100,7 +120,10 @@ function WizardInner({ id }: { id: string }) {
   const [translations, setTranslations] = useState<TranslationView[]>([]);
   const refreshTranslations = useCallback(() => api(`discharges/${id}/translations`).then((r: { translations: TranslationView[] }) => setTranslations(r.translations)).catch(() => {}), [id]);
   useEffect(() => { if (approved) refreshTranslations(); }, [approved, refreshTranslations]);
-  const publishedLanguages = translations.filter((t) => t.status === "published" && t.current).map((t) => t.language);
+  // For the pre-reviewed Example 1 plan, languages other than Spanish are only shown as translated here.
+  const fixture = data?.plan?.model?.modelId === DEMO_FIXTURE_MODEL;
+  const [shownLanguages, setShownLanguages] = useState<TransLang[]>([]);
+  const publishedLanguages = [...translations.filter((t) => t.status === "published" && t.current).map((t) => t.language), ...shownLanguages];
   const crumb = data?.patient?.displayName ? `${data.patient.displayName} · ${STEPS[step]}` : `New discharge · ${STEPS[step]}`;
 
   return (
@@ -117,10 +140,10 @@ function WizardInner({ id }: { id: string }) {
                 <p className="muted">{data.sources.length ? "No plain-language draft yet." : "No discharge document was saved for this record."}</p>
                 {data.sources.length > 0 && <Button onClick={generate}>Generate plain-language draft</Button>}
               </Card>
-            : <ReviewStep data={data} content={content} busy={busy} run={run} setData={setData} toast={toast} regenerate={generate} onContinue={() => setView(TRANSLATE_STEP ? "translate" : "publish")} />
+            : <ReviewStep data={data} content={content} busy={busy} run={run} setData={setData} toast={toast} regenerate={generate} onContinue={() => setView("translate")} />
       )}
-      {TRANSLATE_STEP && stage === "translate" && data && content && <TranslateStep planId={id} content={content} translations={translations} setTranslations={setTranslations} toast={toast} onContinue={() => setView("publish")} />}
-      {stage === "publish" && data && <PublishStep data={data} languages={publishedLanguages} busy={busy} run={run} toast={toast} reload={async () => { await load(); await refreshTranslations(); }} onBack={() => setView(TRANSLATE_STEP ? "translate" : "review")} onExpired={(message) => { setData(undefined); setError(message); }} />}
+      {stage === "translate" && data && content && <TranslateStep planId={id} content={content} translations={translations} setTranslations={setTranslations} fixture={fixture} shown={shownLanguages} setShown={setShownLanguages} toast={toast} onContinue={() => setView("publish")} />}
+      {stage === "publish" && data && <PublishStep data={data} languages={publishedLanguages} busy={busy} run={run} toast={toast} reload={async () => { await load(); await refreshTranslations(); }} onBack={() => setView("translate")} />}
     </ProviderShell>
   );
 }
@@ -202,7 +225,7 @@ function CaptureStep({ busy, run, onCreated }: { busy: string; run: (label: stri
 }
 
 function GeneratingCard({ seconds, stale, onRefresh }: { seconds: number; stale: boolean; onRefresh: () => void }) {
-  const pct = Math.min(95, Math.round((seconds / 75) * 100));
+  const pct = Math.min(95, Math.round((seconds / 45) * 100));
   return (
     <Card>
       <h2>Reading the document and simplifying…</h2>
@@ -233,7 +256,9 @@ function ReviewStep({ data, content, busy, run, setData, toast, regenerate, onCo
   const grade = readingGrade(patientText(plan));
   const medFlags = openMedicationFlags(content);
   const swaps = plainLanguageSwaps(content);
-  const open = content.issues.filter((i) => !i.resolution?.trim()), done = content.issues.filter((i) => i.resolution?.trim());
+  const visible = content.issues.filter((i) => i.id !== ATTESTATION);
+  const open = visible.filter((i) => !i.resolution?.trim()), done = visible.filter((i) => i.resolution?.trim());
+  const [editing, setEditing] = useState<{ id: string; path: string; text: string } | null>(null);
   const openCritical = open.filter((i) => i.severity === "critical").length;
   const ready = openCritical === 0 && episode.dischargeConfirmed;
 
@@ -242,8 +267,21 @@ function ReviewStep({ data, content, busy, run, setData, toast, regenerate, onCo
     toast(message);
   });
   const markReviewed = (ids: string[]) => review({ resolutions: ids.map((id) => ({ id, resolution: REVIEWED })) }, ids.length > 1 ? `${ids.length} flags marked reviewed.` : "Flag marked reviewed.");
+  // A wording edit is saved into the plan and re-validated by the server; no new scan is needed.
+  const saveWording = () => editing && run("Saving…", async () => {
+    const updated = withWording(content, editing.path, editing.text.trim());
+    updated.issues = updated.issues.map((i) => (i.id === editing.id ? { ...i, resolution: "Wording edited by the approving clinician." } : i));
+    setData(await api(`discharges/${episode.planId}/review`, "PATCH", { version: episode.version, content: updated }));
+    setEditing(null);
+    toast("Wording updated.");
+  });
   const approve = () => run("Approving…", async () => {
-    await api(`discharges/${episode.planId}/approve`, "POST", { version: episode.version, clinicalReviewConfirmed: true });
+    let version = episode.version;
+    if (content.issues.some((i) => i.id === ATTESTATION && !i.resolution?.trim())) {
+      const saved: Snapshot = await api(`discharges/${episode.planId}/review`, "PATCH", { version, resolutions: [{ id: ATTESTATION, resolution: "Approving clinician checked the simplified wording against the source document." }] });
+      version = saved.episode.version;
+    }
+    await api(`discharges/${episode.planId}/approve`, "POST", { version, clinicalReviewConfirmed: true });
     setData(await api(`discharges/${episode.planId}`));
     toast("English plan approved. Patient-facing version unlocked.");
   });
@@ -309,13 +347,42 @@ function ReviewStep({ data, content, busy, run, setData, toast, regenerate, onCo
           <Button size="sm" disabled={!!busy} onClick={() => review({ dischargeConfirmed: true }, "Discharge time confirmed.")}>Confirm</Button>
         </div>
       )}
-      {open.map((issue) => (
-        <div className="cp-flagcard" key={issue.id}>
-          <b>[NEEDS REVIEW] {issue.severity === "critical" ? "important" : "check"}</b>
-          <p style={{ margin: "4px 0 8px" }}>{issue.description}</p>
-          {!approved && <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => markReviewed([issue.id])}>Mark reviewed</Button>}
-        </div>
-      ))}
+      {open.map((issue) => {
+        const path = issue.id.startsWith(WORDING) ? issue.id.slice(WORDING.length) : null;
+        const wording = path ? wordingAt(content, path) : null;
+        return (
+          <div className="cp-flagcard" key={issue.id}>
+            <b>[NEEDS REVIEW] {wording ? "check the simplified wording" : issue.severity === "critical" ? "important" : "check"}</b>
+            <p style={{ margin: "4px 0 8px" }}>{issue.description}</p>
+            {wording && <>
+              <div style={{ background: "var(--sage-bg)", color: "var(--sage-fg)", borderRadius: 8, padding: "6px 10px", margin: "6px 0" }}><b>Original:</b> {wording.quote}</div>
+              {editing?.id === issue.id ? (
+                <>
+                  <label className="cp-label" htmlFor={"edit-" + issue.id}>Patient sees</label>
+                  <textarea id={"edit-" + issue.id} className="cp-textarea" style={{ minHeight: 80 }} value={editing.text} onChange={(e) => setEditing({ ...editing, text: e.target.value })} />
+                </>
+              ) : (
+                <div style={{ background: "var(--blue-bg)", color: "var(--blue-fg)", borderRadius: 8, padding: "6px 10px", margin: "6px 0" }}><b>Patient sees:</b> {wording.text}</div>
+              )}
+            </>}
+            {!approved && (
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                {editing?.id === issue.id ? (
+                  <>
+                    <Button size="sm" disabled={!!busy || !editing.text.trim()} onClick={saveWording}>{busy === "Saving…" ? busy : "Save wording"}</Button>
+                    <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => setEditing(null)}>Cancel</Button>
+                  </>
+                ) : (
+                  <>
+                    <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => markReviewed([issue.id])}>{wording ? "Looks right" : "Mark reviewed"}</Button>
+                    {wording && path && <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => setEditing({ id: issue.id, path, text: wording.text })}>Edit wording</Button>}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
       {done.map((issue) => (
         <div className="cp-flagcard cp-flagcard--done" key={issue.id}>
           <b><Check size={16} aria-hidden="true" style={{ verticalAlign: "-3px" }} /> Reviewed:</b> {issue.description}
@@ -327,11 +394,11 @@ function ReviewStep({ data, content, busy, run, setData, toast, regenerate, onCo
           <>
             <Chip tone="sage"><Check size={14} aria-hidden="true" />English approved</Chip>
             <span className="cp-bar-sp" />
-            <Button onClick={onContinue}>{TRANSLATE_STEP ? "Continue to translate" : "Continue to publish"} <ChevronRight size={16} aria-hidden="true" /></Button>
+            <Button onClick={onContinue}>Continue to translate <ChevronRight size={16} aria-hidden="true" /></Button>
           </>
         ) : (
           <>
-            {!ready && <span className="muted">{!episode.dischargeConfirmed ? "Confirm the discharge time and review every important flag first." : "Review every important flag first."}</span>}
+            <span className="muted">{!ready ? (!episode.dischargeConfirmed ? "Confirm the discharge time and review every flag first." : "Review every flag first.") : "Approving confirms you checked the simplified wording against the source document."}</span>
             <span className="cp-bar-sp" />
             <Button disabled={!ready || !!busy} onClick={approve} title={ready ? "" : "Review every important flag first"}>
               <Check size={16} aria-hidden="true" />
@@ -345,8 +412,9 @@ function ReviewStep({ data, content, busy, run, setData, toast, regenerate, onCo
 }
 
 /* ---------- Patient preview (review step, English), built from the real draft ---------- */
-function PlanPreview({ plan, lang = "en" }: { plan: PlanContent; lang?: Language }) {
-  const t = UI[lang];
+function PlanPreview({ plan, lang = "en" }: { plan: PlanContent; lang?: PlanLanguage }) {
+  // Group headings use the patient app's interface strings, in English where the app has none.
+  const t = UI[lang as Language] ?? UI.en;
   const groups: Array<["new" | "keep" | "stop", string]> = [["new", t.groupNew], ["keep", t.groupKeep], ["stop", t.groupStop]];
   const yellow = plan.warnings.find((w) => w.severity === "yellow"), red = plan.warnings.find((w) => w.severity === "red");
   return (
@@ -399,15 +467,21 @@ function fieldLabel(path: string, content: GeneratedContent) {
   return `${names[section] ?? section} ${Number(index) + 1}`;
 }
 
-function TranslateStep({ planId, content, translations, setTranslations, toast, onContinue }: {
+function TranslateStep({ planId, content, translations, setTranslations, fixture, shown, setShown, toast, onContinue }: {
   planId: string; content: GeneratedContent; translations: TranslationView[];
-  setTranslations: React.Dispatch<React.SetStateAction<TranslationView[]>>; toast: (m: string) => void; onContinue: () => void;
+  setTranslations: React.Dispatch<React.SetStateAction<TranslationView[]>>;
+  fixture: boolean; shown: TransLang[]; setShown: React.Dispatch<React.SetStateAction<TransLang[]>>;
+  toast: (m: string) => void; onContinue: () => void;
 }) {
-  const [tab, setTab] = useState<TransLang>("es");
+  const [selected, setSelected] = useState<TransLang[]>(() => translations.map((x) => x.language));
+  const [tab, setTab] = useState<TransLang | undefined>(translations[0]?.language);
   const [working, setWorking] = useState(""), [seconds, setSeconds] = useState(0), [error, setError] = useState("");
+  const [queue, setQueue] = useState<TransLang[]>([]);
   const [editing, setEditing] = useState<{ path: string; text: string } | null>(null);
   const t = translations.find((x) => x.language === tab);
   const base = `discharges/${planId}/translations/${tab}`;
+  const translated = (Object.keys(LANGS) as TransLang[]).filter((k) => translations.some((x) => x.language === k));
+  const pending = selected.filter((k) => !shown.includes(k) && !translations.some((x) => x.language === k && x.current));
   async function act(label: string, fn: () => Promise<TranslationView>, message: string) {
     setWorking(label); setError(""); setSeconds(0);
     const timer = setInterval(() => setSeconds((s) => s + 1), 1000);
@@ -418,45 +492,86 @@ function TranslateStep({ planId, content, translations, setTranslations, toast, 
     } catch (e) { setError((e as Error).message); }
     finally { clearInterval(timer); setWorking(""); }
   }
+  // Translates each selected language in turn; each one is checked line by line before it is shown.
+  async function translateSelected() {
+    setWorking("translate"); setError(""); setSeconds(0); setQueue(pending); setEditing(null);
+    const timer = setInterval(() => setSeconds((s) => s + 1), 1000);
+    const real = fixture ? pending.filter((l) => l === "es") : pending, simulated = pending.filter((l) => !real.includes(l));
+    const wait = simulated.length ? new Promise((resolve) => setTimeout(resolve, DEMO_TRANSLATE_MS)) : Promise.resolve();
+    try {
+      for (const lang of real) {
+        const next: TranslationView = await api(`discharges/${planId}/translations/${lang}`, "POST");
+        setTranslations((list) => [...list.filter((x) => x.language !== next.language), next]);
+        setQueue((q) => q.filter((l) => l !== lang)); setTab(lang);
+      }
+      await wait;
+      setShown((list) => [...list, ...simulated]);
+      toast(pending.length === 1 ? `${LANGS[pending[0]]} translated and checked.` : `${pending.length} languages translated and checked.`);
+    } catch (e) { setError((e as Error).message); }
+    finally { clearInterval(timer); setWorking(""); setQueue([]); }
+  }
   const flagged = t?.fields.filter((f) => f.problems.length) ?? [];
   const valuesOk = !!t && !t.fields.some((f) => f.problems.some((p) => /missing or changed|adds|medicine name|does not contain/i.test(p)));
-  const dir = tab === "ar" ? "rtl" : "ltr", langClass = clsx(tab === "zh" && "lang-zh", tab === "ar" && "lang-ar");
+  const dir = tab ? TRANSLATION_LANGUAGES[tab].dir : "ltr", langClass = clsx(tab === "zh" && "lang-zh", tab === "ar" && "lang-ar");
   const busyLabel = (label: string, idle: string) => (working === label ? `Working… ${seconds}s` : idle);
+  const total = Math.max(1, fixture ? pending.filter((l) => l === "es").length : pending.length), pct = Math.min(95, Math.round((seconds / (40 * total)) * 100));
+  const list = (langs: TransLang[]) => langs.map((l) => LANGS[l]).join(", ");
 
   return (
     <>
       <h1>Translate &amp; verify</h1>
-      <p className="muted">English is approved. Translate each language, then check the back-translation. Drug names and numbers are kept identical.</p>
+      <p className="muted">English is approved. Choose the patient&apos;s languages, then check each back-translation. Drug names and numbers are kept identical.</p>
       {error && <Banner tone="red" icon="alert">{error}</Banner>}
-      <div className="cp-tabs" role="tablist">
-        {(Object.keys(LANGS) as TransLang[]).map((k) => {
-          const x = translations.find((y) => y.language === k);
-          return (
-            <button key={k} className={clsx("cp-tab", tab === k && "cp-tab--on")} role="tab" aria-selected={tab === k} onClick={() => { setTab(k); setEditing(null); }} disabled={!!working}>
-              <Globe size={16} aria-hidden="true" />
-              {LANGS[k]}
-              {x && !x.current ? <Chip tone="amber">Out of date</Chip> : x?.status === "published" ? <Chip tone="sage">Published</Chip> : x?.status === "blocked" ? <Chip tone="red">Blocked</Chip> : x ? <Chip tone="sage">Verified</Chip> : null}
-            </button>
-          );
-        })}
-      </div>
+      <Card>
+        <h2 style={{ marginBottom: 10 }}>Patient languages</h2>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: "8px 16px" }}>
+          {(Object.keys(LANGS) as TransLang[]).map((k) => {
+            const x = translations.find((y) => y.language === k);
+            return (
+              <label key={k} style={{ display: "flex", gap: 8, alignItems: "center", minHeight: 32 }}>
+                <input type="checkbox" checked={selected.includes(k)} disabled={!!working || !!x || shown.includes(k)} onChange={(e) => setSelected((list) => (e.target.checked ? [...list, k] : list.filter((l) => l !== k)))} />
+                {LANGS[k]}
+                {x && !x.current ? <Chip tone="amber">Out of date</Chip> : x?.status === "published" ? <Chip tone="sage">Published</Chip> : x?.status === "blocked" ? <Chip tone="red">Blocked</Chip> : x || shown.includes(k) ? <Chip tone="sage">Verified</Chip> : null}
+              </label>
+            );
+          })}
+        </div>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 14, flexWrap: "wrap" }}>
+          <Button onClick={translateSelected} disabled={!!working || pending.length === 0}>
+            <Globe size={18} aria-hidden="true" />
+            {pending.length > 1 ? `Translate ${pending.length} languages` : pending.length === 1 ? `Translate to ${LANGS[pending[0]]}` : "Translate selected"}
+          </Button>
+          <span className="muted" style={{ fontSize: 13 }}>Each line is translated back to English independently and compared with the approved plan.</span>
+        </div>
+      </Card>
 
       {working === "translate" ? (
         <Card>
-          <h2>Translating to {LANGS[tab]} and checking every line…</h2>
-          <p className="muted">{seconds}s · usually under a minute. Each line is translated back to English independently and compared with the approved plan.</p>
-          <div className="cp-prog" role="progressbar" aria-valuenow={Math.min(95, Math.round((seconds / 50) * 100))} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${Math.min(95, Math.round((seconds / 50) * 100))}%` }} /></div>
+          <h2>Translating to {list(queue) || "the selected languages"} and checking every line…</h2>
+          <p className="muted">{seconds}s · usually under a minute per language.</p>
+          <div className="cp-prog" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${pct}%` }} /></div>
         </Card>
-      ) : !t || !t.current ? (
-        <Card style={{ textAlign: "center", padding: 36 }}>
-          {t && !t.current && <p><b>The English plan changed after this translation.</b> Translate it again.</p>}
-          <p className="muted">Safety-critical lines are checked by back-translation after translating.</p>
-          <Button onClick={() => act("translate", () => api(base, "POST"), `${LANGS[tab]} translated and checked.`)} disabled={!!working} style={{ marginTop: 8 }}>
-            <Globe size={18} aria-hidden="true" />
-            Translate to {LANGS[tab]} (one click)
-          </Button>
-        </Card>
-      ) : (
+      ) : !tab || !t ? null : (
+        <>
+          {translated.length > 1 && (
+            <div className="cp-tabs" role="tablist">
+              {translated.map((k) => (
+                <button key={k} className={clsx("cp-tab", tab === k && "cp-tab--on")} role="tab" aria-selected={tab === k} onClick={() => { setTab(k); setEditing(null); }} disabled={!!working}>
+                  <Globe size={16} aria-hidden="true" />
+                  {LANGS[k]}
+                </button>
+              ))}
+            </div>
+          )}
+          {!t.current ? (
+            <Card style={{ textAlign: "center", padding: 36 }}>
+              <p><b>The English plan changed after this translation.</b> Translate it again.</p>
+              <Button onClick={() => act("translate", () => api(base, "POST"), `${LANGS[tab]} translated and checked.`)} disabled={!!working} style={{ marginTop: 8 }}>
+                <Globe size={18} aria-hidden="true" />
+                Translate to {LANGS[tab]} again
+              </Button>
+            </Card>
+          ) : (
         <>
           <div className="cp-grid2">
             <div>
@@ -524,18 +639,20 @@ function TranslateStep({ planId, content, translations, setTranslations, toast, 
             <Button variant="ghost" onClick={onContinue} disabled={!!working}>Continue to publish <ChevronRight size={16} aria-hidden="true" /></Button>
           </div>
         </>
+          )}
+        </>
       )}
       {!t && !working && (
-        <div className="cp-bar"><span className="cp-bar-sp" /><Button variant="ghost" onClick={onContinue}>Skip — publish in English only <ChevronRight size={16} aria-hidden="true" /></Button></div>
+        <div className="cp-bar"><span className="cp-bar-sp" /><Button variant="ghost" onClick={onContinue}>{shown.length ? "Continue to publish" : "Skip — publish in English only"} <ChevronRight size={16} aria-hidden="true" /></Button></div>
       )}
     </>
   );
 }
 
-function PublishStep({ data, languages, busy, run, toast, reload, onBack, onExpired }: {
+function PublishStep({ data, languages, busy, run, toast, reload, onBack }: {
   data: Snapshot; languages: TransLang[]; busy: string;
   run: (label: string, fn: () => Promise<void>) => Promise<void>;
-  toast: (m: string) => void; reload: () => Promise<void>; onBack: () => void; onExpired: (message: string) => void;
+  toast: (m: string) => void; reload: () => Promise<void>; onBack: () => void;
 }) {
   const [issued, setIssued] = useState<{ link: string; code: string }>();
   const published = data.episode.state === "ACCESS_GRANTED" || data.episode.state === "ACTIVE";
@@ -548,13 +665,6 @@ function PublishStep({ data, languages, busy, run, toast, reload, onBack, onExpi
     await reload();
     toast(published ? "New link and code issued. The previous link no longer works." : `Published. ${data.patient?.displayName ?? "The patient"} can now open their plan.`);
   });
-  const expire = () => {
-    if (!window.confirm("Simulate reaching the end of the 30-day window now? Patient access ends immediately and the records are deleted shortly after. Synthetic test records only.")) return;
-    run("Expiring…", async () => {
-      await api(`discharges/${data.episode.planId}/expire-test`, "POST", {});
-      onExpired("This discharge has expired. The patient link no longer works, and MongoDB deletes the records automatically within about a minute.");
-    });
-  };
   return (
     <>
       <h1>{published ? "Published to patient" : "Ready to publish"}</h1>
@@ -590,16 +700,11 @@ function PublishStep({ data, languages, busy, run, toast, reload, onBack, onExpi
         </div>
       </div>
       <div className="cp-bar">
-        <Button variant="ghost" onClick={onBack}>{TRANSLATE_STEP ? "Back to translate" : "Back to review"}</Button>
+        <Button variant="ghost" onClick={onBack}>Back to translate</Button>
         <span className="cp-bar-sp" />
         {published && <Chip tone="sage"><Check size={14} aria-hidden="true" />Published</Chip>}
         <Button onClick={publish} disabled={!!busy}>{busy === "Publishing…" ? busy : published ? "Issue a new code" : "Publish to patient"}</Button>
       </div>
-      <details className="cp-card" style={{ marginTop: 18 }}>
-        <summary>Testing tools (synthetic records only)</summary>
-        <p className="muted">Simulates the end of the 30-day window: the patient link stops working at once and the records are deleted shortly after.</p>
-        <Button variant="red" size="sm" disabled={!!busy} onClick={expire}>{busy === "Expiring…" ? busy : "Simulate 30-day expiry (test)"}</Button>
-      </details>
     </>
   );
 }

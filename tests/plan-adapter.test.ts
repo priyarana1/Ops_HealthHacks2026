@@ -98,3 +98,11 @@ describe("keeping patient items short", () => {
     expect(shortDiagnosis(["Problems when you came to the hospital: Your heart failure got worse."])).toBe("Your heart failure got worse");
   });
 });
+
+describe("pill counts", () => {
+  it("are passed through only when supplied, never derived from the dose", () => {
+    expect(toPlanContent(content).medications.new[0].tabletCount).toBeUndefined();
+    const supplied: GeneratedContent = { ...content, medications: content.medications.map((m, i) => (i === 0 ? { ...m, tabletCount: 2 } : m)) };
+    expect(toPlanContent(supplied).medications.new[0]).toMatchObject({ dose: "40 mg", tabletCount: 2 });
+  });
+});

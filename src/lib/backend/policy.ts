@@ -91,7 +91,8 @@ export function validateClinical(content:GeneratedContent,sources:SourceProvenan
   if(directives.size>1 || doses.size>1)warnings.push({id:`source-conflict-${i}`,severity:'critical',description:`${m.name}: source lines contain different reconciliation directives or doses. Clinician must reconcile; no source may silently override another.`,resolution:null});
   const statusPattern:Record<string,RegExp>={NEW:/\bnew|start|initiat/i,CONTINUE:/\bcontinu/i,CHANGE:/\bchang|increas|decreas|replac/i,STOP:/\bstop|discontinu/i,HOLD:/\bhold|held|temporar/i};
   if(!statusPattern[m.status].test(m.evidence.quote+'\n'+sectionHeading(source.text,m.evidence.quote)))warnings.push({id:`status-${i}`,severity:'critical',description:`${m.name}: reconciliation status lacks explicit source evidence.`,resolution:null});
-  if(!['STOP','HOLD'].includes(m.status) && (!m.dose || !m.route || !m.frequency))warnings.push({id:`medication-${i}`,severity:m.dose && m.frequency?'warning':'critical',description:`${m.name}: the source does not state the ${(['dose','route','frequency'] as const).filter(k=>!m[k]).join(', ')}. Do not guess; confirm with the prescriber.`,resolution:null});
+  // A missing route alone is not flagged: discharge lists often omit it for oral medicines.
+  if(!['STOP','HOLD'].includes(m.status) && (!m.dose || !m.frequency))warnings.push({id:`medication-${i}`,severity:'critical',description:`${m.name}: the source does not state the ${(['dose','frequency'] as const).filter(k=>!m[k]).join(' or ')}. Do not guess; confirm with the prescriber.`,resolution:null});
  }
  return warnings;
 }

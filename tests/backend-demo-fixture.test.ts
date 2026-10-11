@@ -18,8 +18,13 @@ describe('Pre-reviewed demo fixture for the Example 1 PDF',()=>{
   const sources=[await sourceFor('Patient_1_HFrEF_Pneumonia_AKI.pdf')],content=demoFixtureContent(sources)!;
   expect(()=>validateClinical(content,sources)).not.toThrow();
   const critical=content.issues.filter(i=>i.severity==='critical').map(i=>i.id);
-  expect(critical).toEqual(['weight-threshold','source-completeness']);
-  expect(content.medications.map(m=>[m.name,m.status])).toEqual([['Furosemide','NEW'],['Losartan','NEW'],['Empagliflozin','NEW'],['Amoxicillin-clavulanate','NEW'],['Metoprolol succinate','CONTINUE'],['Apixaban','CONTINUE'],['Atorvastatin','CONTINUE'],['Metformin','CONTINUE'],['Lisinopril','STOP'],['Spironolactone','HOLD']]);
+  expect(critical).toEqual(['review-wording:medications.7.plainLanguage','review-wording:medications.9.plainLanguage','review-wording:diet.0.text','source-completeness']);
+  expect(content.issues.filter(i=>i.severity!=='critical')).toEqual([]);
+  expect(content.medications.map(m=>[m.name,m.status])).toEqual([['Furosemide','NEW'],['Losartan','NEW'],['Empagliflozin','NEW'],['Amoxicillin-clavulanate','NEW'],['Metoprolol succinate','CONTINUE'],['Apixaban','CONTINUE'],['Atorvastatin','CONTINUE'],['Metformin','CONTINUE'],['Lisinopril','STOP'],['Spironolactone','HOLD'],['Ibuprofen/other NSAIDs','STOP']]);
+  // Pill counts are supplied by the fixture (as pharmacy data), only for medicines the patient takes.
+  expect(content.medications.map(m=>m.tabletCount)).toEqual([1,1,1,1,1,1,1,1,undefined,undefined,undefined]);
+  // The patient to-do is only simple daily actions; medicine-taking is covered by the medicine checklist.
+  expect([...content.dailyActions,...content.otherInstructions].map(i=>i.text)).toEqual(['Weigh yourself each morning and write it down.']);
  });
  it('has Spanish for every translatable line, with numbers and medicine names unchanged',async()=>{
   const sources=[await sourceFor('Patient_1_HFrEF_Pneumonia_AKI.pdf')],content=demoFixtureContent(sources)!;
