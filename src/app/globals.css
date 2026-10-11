@@ -1883,6 +1883,8 @@ h2 { font-size: 22px; }
 .pt-link-icon--blue { background: var(--blue-bg); color: var(--blue); }
 .pt-link-icon--sage { background: var(--sage-bg); color: var(--sage); }
 .pt-link-icon--amber { background: #fdf0cc; color: #a8741a; }
+.pt-link-icon--red { background: var(--brand-red-soft); color: var(--brand-red); }
+.pt-profile-why { scroll-margin-top: 16px; }
 .pt-tips-title { display: flex; align-items: center; gap: 12px; }
 .pt-home-actions .pt-linkcard { min-height: 80px; padding: 18px; text-align: start; }
 .pt-home-actions .pt-linkcard > svg:first-child { color: var(--ink); flex-shrink: 0; }
@@ -2017,6 +2019,10 @@ h2 { font-size: 22px; }
 .pt-simple-meds { --period-bg: #fdf0cc; --period-edge: #d3a447; --period-ink: #674612; border: 1px solid var(--period-edge); border-radius: 12px; overflow: hidden; background: white; }
 .pt-simple-meds--midday { --period-bg: #dcefe7; --period-edge: #6d9b86; --period-ink: #244f3c; }
 .pt-simple-meds--night { --period-bg: #e7e4f6; --period-edge: #9388bd; --period-ink: #493f72; }
+.pt-simple-meds--stop { --period-bg: #f9e3e4; --period-edge: #c98289; --period-ink: #7b3041; }
+.pt-simple-meds--safety { --period-bg: #e2ecf4; --period-edge: #8fb0cf; --period-ink: #1f4f7a; }
+.pt-med-box { margin-top: 28px; }
+.pt-med-box-note { margin: 6px 0 0; font-size: 19px; line-height: 1.5; color: var(--text); }
 .pt-simple-meds .pt-dose-heading { margin: 0; padding: 16px; background: var(--period-bg); color: var(--period-ink); border-bottom: 1px solid var(--period-edge); gap: 12px; }
 .pt-simple-meds .pt-dose-heading h2 { margin: 0 0 4px; font-size: 24px; color: inherit; }
 .pt-simple-meds .pt-dose-heading > .pt-period-icon { margin-inline-start: 0; } /* icon and label on the left */
@@ -2180,3 +2186,43 @@ h2 { font-size: 22px; }
 .pt-clinical .pt-main .pt-todo-screen .pt-card .lead { font-size: 21px; }
 .pt-todo-screen .pt-card .cp-chip { font-size: 17px; }
 .pt-todo-screen .pt-appointment-contact p, .pt-todo-screen .pt-appointment-contact a, .pt-todo-screen .pt-appointment-phone { font-size: 20px; }
+/* Medicine Help pop-up: larger text. */
+.pt-clinical .pt-medicine-dialog { width: min(600px, calc(100vw - 24px)); padding: 28px; }
+.pt-clinical .pt-medicine-dialog h2 { font-size: 32px; }
+.pt-clinical .pt-medicine-help-facts { gap: 22px; }
+.pt-clinical .pt-medicine-help-facts dt { font-size: 20px; }
+.pt-clinical .pt-medicine-help-facts dd { font-size: 24px; }
+.pt-clinical .pt-medicine-help-instructions h3 { font-size: 22px; }
+.pt-clinical .pt-medicine-help-instructions p { font-size: 22px; }
+.pt-clinical .pt-medicine-dialog .pt-med-label-note { font-size: 19px; }
+.pt-clinical .pt-medicine-dialog .pt-btn { font-size: 22px; min-height: 60px; }
+/* Profile: full discharge plan laid out for easy reading. */
+.pt-profile .pt-profile-discharge section.pt-pd { border-top: 0; margin-top: 18px; padding: 20px; border-radius: 14px; background: #f7f9fb; border: 1px solid var(--line); }
+.pt-main .pt-profile .pt-pd-title { display: flex; align-items: center; gap: 12px; margin: 0 0 14px; font-size: 25px; line-height: 1.3; }
+.pt-profile .pt-profile-discharge section.pt-pd--why { background: #f1f6fb; }
+.pt-profile .pt-profile-discharge .pt-pd-why-text { margin: 0; font-size: 22px; line-height: 1.7; }
+.pt-pd-meds { display: grid; gap: 12px; }
+.pt-profile .pt-pd .pt-profile-med { margin: 0; padding: 16px 18px; background: #fff; border: 1px solid var(--line); border-radius: 12px; }
+.pt-profile .pt-pd--new .pt-profile-med { border-inline-start: 5px solid var(--sage); }
+.pt-profile .pt-pd--keep .pt-profile-med { border-inline-start: 5px solid var(--blue); }
+.pt-profile .pt-pd--stop .pt-profile-med { border-inline-start: 5px solid var(--brand-red); }
+.pt-profile .pt-pd .pt-profile-med h3 { margin: 0 0 8px; }
+.pt-profile .pt-profile-discharge .pt-pd-schedule { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 6px 12px; border-radius: 999px; background: var(--blue-bg); color: var(--ink); font-size: 19px; font-weight: 600; }
+.pt-profile .pt-profile-discharge .pt-pd-purpose { font-weight: 600; }
+.pt-profile .pt-profile-discharge .pt-pd .pt-profile-med p { margin: 6px 0 0; line-height: 1.55; }
+.pt-profile .pt-profile-discharge .pt-pd-callout { margin: 14px 0 0; padding: 12px 14px; border-radius: 10px; background: var(--brand-red-soft); color: var(--red-fg); font-size: 20px; line-height: 1.5; }
+.pt-profile .pt-profile-discharge .pt-pd-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.pt-profile .pt-profile-discharge .pt-pd-list li { display: flex; align-items: flex-start; gap: 12px; margin: 0; padding: 14px 16px; background: #fff; border: 1px solid var(--line); border-radius: 12px; font-size: 21px; line-height: 1.5; }
+.pt-profile .pt-pd-list li > svg { flex: none; margin-top: 4px; color: var(--ink-soft); }
+.pt-profile .pt-pd--daily .pt-pd-list li > svg { color: var(--sage); }
+.pt-profile .pt-profile-discharge section.pt-pd--team { background: var(--amber-bg); border-color: #f0d9a8; }
+.pt-profile .pt-pd--team .pt-pd-list li > svg { color: #a8741a; }
+.pt-profile .pt-profile-discharge section.pt-pd--urgent { background: #fff0f2; border-color: #f0c3cb; }
+.pt-profile .pt-pd--urgent .pt-pd-list li > svg { color: var(--brand-red); }
+.pt-profile .pt-pd--urgent .pt-pd-title { color: var(--red-fg); }
+@media (max-width: 520px) {
+  .pt-profile .pt-profile-discharge { padding: 12px; }
+  .pt-profile .pt-profile-discharge section.pt-pd { padding: 14px 12px; }
+  .pt-profile .pt-pd .pt-profile-med { padding: 14px; }
+  .pt-profile .pt-profile-discharge .pt-pd-list li { padding: 12px; gap: 10px; }
+}

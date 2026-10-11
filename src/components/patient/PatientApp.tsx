@@ -11,6 +11,7 @@ import {
   ClipboardPen,
   Lightbulb,
   Heart,
+  HeartPulse,
   Download,
   X,
   MessageCircle,
@@ -20,6 +21,7 @@ import {
   Calendar,
   Check,
   Ban,
+  ShieldAlert,
   ChevronRight,
   Clock,
   Send,
@@ -144,8 +146,13 @@ export function PatientApp({ expired = false, data = DEMO_DATA, verify, signedIn
     showToast(`${LANGUAGE_LABELS[l]}`);
   }
 
+  // Opening the Profile tab from Home's "Why I was in the hospital" link scrolls to that section.
+  const scrollToWhy = useRef(false);
   useEffect(() => {
-    mainRef.current?.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    const target = screen === "profile" && scrollToWhy.current ? document.getElementById("profile-why") : null;
+    scrollToWhy.current = false;
+    if (target) target.scrollIntoView({ block: "start", behavior: "instant" });
+    else mainRef.current?.scrollTo({ top: 0, left: 0, behavior: "instant" });
   }, [screen]);
 
   const bare = screen === "otp" || screen === "expired";
@@ -182,6 +189,7 @@ export function PatientApp({ expired = false, data = DEMO_DATA, verify, signedIn
               lang={lang}
               daysLeft={daysLeft}
               go={setScreen}
+              openWhy={() => { scrollToWhy.current = true; setScreen("profile"); }}
             />
           )}
           {screen === "meds" && (
@@ -394,11 +402,13 @@ function HomeScreen({
   lang,
   daysLeft,
   go,
+  openWhy,
 }: {
   t: (typeof UI)[Language];
   lang: Language;
   daysLeft: number;
   go: (s: Screen) => void;
+  openWhy: () => void;
 }) {
   const data = usePatientData();
   const recovery = RECOVERY_COPY[lang];
@@ -438,6 +448,7 @@ function HomeScreen({
       <div className="pt-home-actions">
         <button className="pt-linkcard" type="button" onClick={() => go("todo")}><span className="pt-link-icon pt-link-icon--blue"><ListChecks size={26} aria-hidden="true" /></span><span><b>{ARTICLE_COPY[lang].todo}</b></span><ChevronRight size={24} className="go" aria-hidden="true" /></button>
         <button className="pt-linkcard" type="button" onClick={() => go("checkin")}><span className="pt-link-icon pt-link-icon--sage"><ClipboardPen size={26} aria-hidden="true" /></span><span><b>{{ en: "Bring me to my questionnaire", es: "Ir a mi cuestionario", zh: "查看我的问卷", ar: "انتقل إلى استبياني" }[lang]}</b></span><ChevronRight size={24} className="go" aria-hidden="true" /></button>
+        <button className="pt-linkcard" type="button" onClick={openWhy}><span className="pt-link-icon pt-link-icon--red"><HeartPulse size={26} aria-hidden="true" /></span><span><b>{{ en: "Why I was in the hospital", es: "Por qué estuve en el hospital", zh: "我为什么住院", ar: "لماذا كنت في المستشفى" }[lang]}</b></span><ChevronRight size={24} className="go" aria-hidden="true" /></button>
       </div>
       <RecommendedTips lang={lang} />
     </section>
@@ -494,6 +505,12 @@ function labelCase(text: string | undefined, lang: Language) {
   if (!text) return text;
   if (lang !== "en") return text.charAt(0).toLocaleUpperCase(lang) + text.slice(1);
   return text.split(" ").map((word, i) => (i > 0 && MINOR_WORDS.has(word.toLowerCase()) ? word.toLowerCase() : word.charAt(0).toUpperCase() + word.slice(1))).join(" ");
+}
+
+/** Title case for English headings ("NEW — start these" -> "New — Start These"); other languages unchanged. */
+function titleCase(text: string, lang: Language) {
+  if (lang !== "en") return text;
+  return text.toLowerCase().split(" ").map((word, i) => (i > 0 && MINOR_WORDS.has(word) ? word : word.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join("-"))).join(" ");
 }
 
 function pillCountLabel(count: number, lang: Language) {
@@ -576,7 +593,7 @@ function MedsScreen({ t, lang }: {
     return messages.map((message) => ({ name: m.name, message }));
   });
   const helpCopy = {
-    en: { button: "Medicine help", when: "When to take it", instructions: "What to do", close: "Close" },
+    en: { button: "Medicine Help", when: "When to take it", instructions: "What to do", close: "Close" },
     es: { button: "Ayuda con la medicina", when: "Cuándo tomarla", instructions: "Qué hacer", close: "Cerrar" },
     zh: { button: "用药帮助", when: "何时服用", instructions: "该怎么做", close: "关闭" },
     ar: { button: "مساعدة الدواء", when: "متى تتناوله", instructions: "ما يجب فعله", close: "إغلاق" },
@@ -621,13 +638,17 @@ function MedsScreen({ t, lang }: {
         </>}
       </dialog>
       <p className="pt-med-label-note">{cardCopy.label}</p>
-      <section className="pt-stopped-meds" aria-labelledby="stopped-title">
-        <h2 id="stopped-title"><Ban size={22} aria-hidden="true" />{copy.stop}</h2>
-        {content.medications.stop.map((m) => <div className="pt-stopped-row" key={m.name}><h3><bdi dir="ltr">{m.name}</bdi></h3><p>{m.note}</p></div>)}
-      </section>
-      {medicationWarnings.length > 0 && <section className="pt-medication-warnings" aria-labelledby="medication-warnings-title">
-        <h2 id="medication-warnings-title">{{ en: "Medication safety", es: "Seguridad de los medicamentos", zh: "用药安全", ar: "سلامة الأدوية" }[lang]}</h2>
-        <ul>{medicationWarnings.map(({ name, message }) => <li key={`${name}:${message}`}><h3><bdi dir="ltr">{name}</bdi></h3><p>{message}</p></li>)}</ul>
+      {content.medications.stop.length > 0 && <section className={clsx("pt-simple-meds", "pt-simple-meds--stop", "pt-med-box")} aria-labelledby="stopped-title">
+        <div className="pt-dose-heading"><span className="pt-period-icon"><Ban size={28} aria-hidden="true" /></span><div><h2 id="stopped-title">{copy.stop}</h2></div></div>
+        <div className="pt-dose-list">
+          {content.medications.stop.map((m) => <article className="pt-dose-card" key={m.name}><div className="pt-dose-main"><Ban size={22} aria-hidden="true" /><div><h3><bdi dir="ltr">{m.name}</bdi></h3>{m.note && <p className="pt-med-box-note">{m.note}</p>}</div></div></article>)}
+        </div>
+      </section>}
+      {medicationWarnings.length > 0 && <section className={clsx("pt-simple-meds", "pt-simple-meds--safety", "pt-med-box")} aria-labelledby="medication-warnings-title">
+        <div className="pt-dose-heading"><span className="pt-period-icon"><ShieldAlert size={28} aria-hidden="true" /></span><div><h2 id="medication-warnings-title">{{ en: "Medication safety", es: "Seguridad de los medicamentos", zh: "用药安全", ar: "سلامة الأدوية" }[lang]}</h2></div></div>
+        <div className="pt-dose-list">
+          {medicationWarnings.map(({ name, message }) => <article className="pt-dose-card" key={`${name}:${message}`}><div className="pt-dose-main"><AlertTriangle size={22} aria-hidden="true" /><div><h3><bdi dir="ltr">{name}</bdi></h3><p className="pt-med-box-note">{message}</p></div></div></article>)}
+        </div>
       </section>}
     </section>
   );
@@ -670,7 +691,6 @@ function DailyChecklist({ lang, done, setDone, onCheckin }: { onCheckin: () => v
     <div className="pt-daily-plan">
       <div className="pt-plan-heading"><h2>{copy.title}</h2><span className="muted tn">{completed} / {priorities.length}</span></div>
       <progress className="pt-plan-progress" aria-label={copy.title} value={completed} max={priorities.length} />
-      <p className="pt-checklist-timing">{copy.schedule}</p>
       {medicationTasks.map((medTask) => {
         const Icon = medTask.period === "morning" ? Sunrise : Moon;
         const periodTasks = medTask.period === "morning" ? [...tasks, medTask] : [medTask];
@@ -696,6 +716,11 @@ const PROFILE_COPY = {
   zh: { title: "个人资料", info: "您的信息", age: "年龄", years: "岁", condition: "心力衰竭", language: "语言", full: "完整出院计划", intro: "用简单语言解释的护理指导。", daily: "每天", visits: "复诊", urgent: "寻求紧急帮助——紧急情况下拨打911", team: "联系心脏护理团队", avoid: "未经主治医生批准，请勿服用布洛芬或其他非甾体抗炎药。", weigh: "称体重", hold: "恢复服用暂停的药物前，请咨询护理团队。", support: "添加支持计划成员", name: "姓名", phone: "电话号码", enroll: "登记", enrolled: "已登记", remove: "移除" },
   ar: { title: "الملف", info: "معلوماتك", age: "العمر", years: "سنة", condition: "قصور القلب", language: "اللغة", full: "خطة الخروج الكاملة", intro: "تعليمات الرعاية بكلمات بسيطة.", daily: "كل يوم", visits: "المتابعة", urgent: "اطلب مساعدة عاجلة — اتصل بـ 911 في الطوارئ", team: "اتصل بفريق رعاية القلب", avoid: "لا تتناول إيبوبروفين أو مضادات الالتهاب غير الستيرويدية الأخرى إلا بموافقة الطبيب المعالج.", weigh: "زن نفسك", hold: "اسأل فريق الرعاية قبل استئناف دواء تم إيقافه مؤقتاً.", support: "إضافة عضو إلى خطة الدعم الخاصة بي", name: "الاسم", phone: "رقم الهاتف", enroll: "تسجيل", enrolled: "مسجَّل", remove: "إزالة" },
 };
+
+/** Section header in the profile's full discharge plan: icon tile plus underlined title. */
+function SectionTitle({ icon: Icon, tone, lang, children }: { icon: typeof Home; tone: "red" | "sage" | "blue" | "amber"; lang: Language; children: string }) {
+  return <h2 className="pt-pd-title"><span className={clsx("pt-link-icon", `pt-link-icon--${tone}`)}><Icon size={24} aria-hidden="true" /></span><span className="pt-pd-title-text">{titleCase(children, lang)}</span></h2>;
+}
 
 type SupportMember = { name: string; phone: string };
 
@@ -786,12 +811,22 @@ function ProfileScreen({ lang, changeLang, members, setMembers, done }: { lang: 
       </li>)}</ul>}
     </section>
     <details className="pt-profile-discharge" open>
-      <summary>{copy.full}</summary><p className="muted">{copy.intro}</p>
-      <section><h2>{content.whyTitle}</h2><p>{content.why}</p></section>
-      {(["new", "keep", "stop"] as const).map((group) => <section key={group}><h2>{group === "new" ? t.groupNew : group === "keep" ? t.groupKeep : t.groupStop}</h2>{content.medications[group].map((m) => <article className="pt-profile-med" key={m.name}><h3><bdi dir="ltr">{m.name}{m.tabletCount && ` — ${pillCountLabel(m.tabletCount, lang)}`}</bdi></h3>{medicationSchedule(m) && <p>{labelCase(medicationSchedule(m), lang)}{m.route && ` · ${labelCase(m.route, lang)}`}</p>}{m.purpose && <p>{m.purpose}</p>}{m.note && <p>{m.note}</p>}{m.warning && m.warning !== m.note && <p className="pt-profile-warning">{m.warning}</p>}</article>)}{group === "stop" && <><p>{copy.hold}</p>{data.demo && <p>{copy.avoid}</p>}</>}</section>)}
-      <section><h2>{copy.daily}</h2><ul>{content.todos.map((item) => <li key={item.id}>{item.label}</li>)}</ul></section>
-      <section><h2>{copy.visits}</h2><ul>{content.appointments.map((visit) => <li key={visit.type}><b>{visit.type}</b>{visit.when && <><br />{visit.when}</>}</li>)}</ul></section>
-      {content.warnings.map((zone) => <section key={zone.severity} className={zone.severity === "red" ? "pt-profile-urgent" : ""}><h2>{zone.severity === "red" ? copy.urgent : copy.team}</h2><ul>{zone.items.map((item) => <li key={item}>{item}</li>)}</ul></section>)}
+      <summary>{titleCase(copy.full, lang)}</summary><p className="muted">{copy.intro}</p>
+      <section id="profile-why" className="pt-profile-why pt-pd pt-pd--why"><SectionTitle lang={lang} icon={HeartPulse} tone="red">{content.whyTitle}</SectionTitle><p className="pt-pd-why-text">{content.why}</p></section>
+      {(["new", "keep", "stop"] as const).map((group) => <section key={group} className={clsx("pt-pd", `pt-pd--${group}`)}>
+        <SectionTitle lang={lang} icon={group === "stop" ? Ban : Pill} tone={group === "new" ? "sage" : group === "keep" ? "blue" : "red"}>{group === "new" ? t.groupNew : group === "keep" ? t.groupKeep : t.groupStop}</SectionTitle>
+        <div className="pt-pd-meds">{content.medications[group].map((m) => <article className="pt-profile-med" key={m.name}>
+          <h3><bdi dir="ltr">{m.name}{m.tabletCount && ` — ${pillCountLabel(m.tabletCount, lang)}`}</bdi></h3>
+          {medicationSchedule(m) && <p className="pt-pd-schedule"><Clock size={18} aria-hidden="true" />{labelCase(medicationSchedule(m), lang)}{m.route && ` · ${labelCase(m.route, lang)}`}</p>}
+          {m.purpose && <p className="pt-pd-purpose">{m.purpose}</p>}
+          {m.note && <p>{m.note}</p>}
+          {m.warning && m.warning !== m.note && <p className="pt-profile-warning">{m.warning}</p>}
+        </article>)}</div>
+        {group === "stop" && <><p className="pt-pd-callout">{copy.hold}</p>{data.demo && <p className="pt-pd-callout">{copy.avoid}</p>}</>}
+      </section>)}
+      <section className="pt-pd pt-pd--daily"><SectionTitle lang={lang} icon={ListChecks} tone="blue">{copy.daily}</SectionTitle><ul className="pt-pd-list">{content.todos.map((item) => <li key={item.id}><Check size={22} aria-hidden="true" /><span>{item.label}</span></li>)}</ul></section>
+      <section className="pt-pd pt-pd--visits"><SectionTitle lang={lang} icon={Calendar} tone="blue">{copy.visits}</SectionTitle><ul className="pt-pd-list">{content.appointments.map((visit) => <li key={visit.type}><Calendar size={22} aria-hidden="true" /><span><b>{visit.type}</b>{visit.when && <><br />{visit.when}</>}</span></li>)}</ul></section>
+      {content.warnings.map((zone) => <section key={zone.severity} className={clsx("pt-pd", zone.severity === "red" ? "pt-profile-urgent pt-pd--urgent" : "pt-pd--team")}><SectionTitle lang={lang} icon={zone.severity === "red" ? AlertTriangle : Phone} tone={zone.severity === "red" ? "red" : "amber"}>{zone.severity === "red" ? copy.urgent : copy.team}</SectionTitle><ul className="pt-pd-list">{zone.items.map((item) => <li key={item}><AlertTriangle size={20} aria-hidden="true" /><span>{item}</span></li>)}</ul></section>)}
     </details>
   </section>;
 }
