@@ -1,9 +1,10 @@
 import { describe,it,expect,vi,beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { memoryDatabase } from './fixtures/backend-memory';
-const doubles=vi.hoisted(()=>({process:vi.fn(),send:vi.fn(),cookie:{} as {token?:string;save:()=>Promise<void>;destroy:()=>void},tables:undefined as unknown,models:{} as Record<string,unknown>}));
-vi.mock('../src/lib/backend/models',async()=>{const {memoryDatabase}=await import('./fixtures/backend-memory');const memory=memoryDatabase();doubles.tables=memory.tables;for(const name of ['EpisodeModel','PatientReferenceModel','ClinicalPlanModel','SourceModel','ApprovalModel','InvitationModel','AccountModel','PatientSessionModel','ObjectManifestModel'])doubles.models[name]=memory.model(name);return doubles.models;});
+const doubles=vi.hoisted(()=>({llm:vi.fn(),process:vi.fn(),send:vi.fn(),cookie:{} as {token?:string;save:()=>Promise<void>;destroy:()=>void},tables:undefined as unknown,models:{} as Record<string,unknown>}));
+vi.mock('../src/lib/backend/models',async()=>{const {memoryDatabase}=await import('./fixtures/backend-memory');const memory=memoryDatabase();doubles.tables=memory.tables;for(const name of ['TranslationModel','EpisodeModel','PatientReferenceModel','ClinicalPlanModel','SourceModel','ApprovalModel','InvitationModel','AccountModel','PatientSessionModel','ObjectManifestModel'])doubles.models[name]=memory.model(name);return doubles.models;});
 vi.mock('../src/lib/db/mongodb',()=>({connectDB:vi.fn()}));
+vi.mock('../src/lib/backend/llm',async()=>({...await vi.importActual('../src/lib/backend/llm'),modelClient:()=>({modelId:'SYNTHETIC-TEST-DOUBLE',region:'test',send:doubles.llm})}));
 vi.mock('../src/lib/backend/repository',async()=>({...await vi.importActual('../src/lib/backend/repository'),transaction:async(fn:(s:unknown)=>Promise<unknown>)=>fn({})}));
 vi.mock('../src/lib/backend/bedrock',()=>({clinicalProcessor:{process:doubles.process}}));vi.mock('../src/lib/backend/email',()=>({emailDelivery:{sendInvitation:doubles.send}}));
 vi.mock('../src/lib/auth/session',()=>({identity:async()=>({identity:'synthetic-provider',sessionHash:'synthetic-provider-session',isAdmin:true})}));
@@ -52,6 +53,29 @@ describe('Backend orchestration — test doubles only, no live MongoDB/AWS/email
   for(let i=0;i<5;i++)await call('patient/link/verify','POST',{token,code:wrong});
   expect((await call('patient/link/verify','POST',{token,code:pub.body.code})).body).toEqual({verified:false,triesLeft:0});
   expect((await call('patient/link','POST',{token})).body).toEqual({status:'locked'});
+ });
+ it('translates the approved plan, blocks a meaning change, accepts an edit, publishes, and serves it to the patient',async()=>{
+  // Scripted stand-in for the AI: Spanish-looking text, a literal back-translation, and one injected mismatch.
+  let mismatch=true;
+  const reply=(json:unknown)=>({output:{message:{content:[{text:JSON.stringify(json)}]}}});
+  doubles.llm.mockImplementation(async(input:{system:{text:string}[];messages:{content:{text:string}[]}[]})=>{
+   const system=input.system[0].text,payload=JSON.parse(input.messages[0].content[0].text);
+   if(system.includes('You translate'))return reply({translations:payload.fields.map((f:{path:string;text:string})=>({path:f.path,text:'ES '+f.text}))});
+   if(system.includes('back into English'))return reply({backTranslations:payload.texts.map((t:{path:string;text:string})=>({path:t.path,text:t.text.replace(/^ES /,'')}))});
+   return reply({mismatches:mismatch?[{path:payload.items[0].path,problem:'The timing changed.'}]:[]});
+  });
+  const d=await approved();
+  expect((await call(`discharges/${d.planId}/translations/fr`,'POST')).status).toBe(400);
+  const es=await call(`discharges/${d.planId}/translations/es`,'POST');expect(es.status).toBe(200);expect(es.body.status).toBe('blocked');
+  expect(es.body.fields[0]).toMatchObject({path:'dailyActions.0.text',source:'Weigh daily.',text:'ES Weigh daily.',backTranslation:'Weigh daily.',problems:['The timing changed.']});
+  expect((await call(`discharges/${d.planId}/translations/es/publish`,'POST')).status).toBe(422);
+  mismatch=false;
+  const edited=await call(`discharges/${d.planId}/translations/es`,'PATCH',{path:'dailyActions.0.text',text:'ES Pésese cada día.'});expect(edited.body.status).toBe('verified');
+  const published=await call(`discharges/${d.planId}/translations/es/publish`,'POST');expect(published.body).toMatchObject({status:'published',publishedBy:'synthetic-provider',current:true});
+  expect((await call(`discharges/${d.planId}/translations`)).body.translations.map((t:{language:string;status:string})=>[t.language,t.status])).toEqual([['es','published']]);
+  const pub=await call(`discharges/${d.planId}/publish`,'POST',{}),token=pub.body.link.split('/p/')[1];
+  await call('patient/link/verify','POST',{token,code:pub.body.code});
+  const plan=await call('patient/discharge-plan');expect(plan.body.content.dailyActions[0].text).toBe('Weigh daily.');expect(plan.body.translations.es.dailyActions[0].text).toBe('ES Pésese cada día.');
  });
  it('approves, grants, activates once, logs in, retrieves only its plan, and denies access after expiry',async()=>{
   const d=await approved(),grant=await call(`discharges/${d.planId}/grant-access`,'POST',{version:3,email:'synthetic@example.com',enrollmentAuthorized:true});expect(grant.status).toBe(200);const sent=doubles.send.mock.calls[0][0],token=new URL(sent.activationUrl).hash.slice('#token='.length);const activation={token,activationCode:grant.body.activationCode,password:'Synthetic-test-password-123'};

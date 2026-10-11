@@ -3,7 +3,9 @@ import bcrypt from 'bcryptjs';
 import { AppError,hash,randomToken } from '@/lib/security/core';
 import { records,fhirId } from '@/lib/epic/resources';
 import { createEpisode,sourceInput,reviewInput,approveInput,grantInput,generatedContent,type SourceProvenance } from './contracts';
-import { EpisodeModel,PatientReferenceModel,ClinicalPlanModel,SourceModel,ApprovalModel,InvitationModel,AccountModel,PatientSessionModel,ObjectManifestModel } from './models';
+import { EpisodeModel,PatientReferenceModel,ClinicalPlanModel,SourceModel,ApprovalModel,InvitationModel,AccountModel,PatientSessionModel,ObjectManifestModel,TranslationModel } from './models';
+import { DEMO_FIXTURE_MODEL,DEMO_SPANISH } from './demo-fixture';
+import { translatableFields } from '@/lib/translation-fields';
 import { transaction,ownedEpisode,snapshot,signedContent } from './repository';
 import { dischargeBoundary,extractionDateCandidates,requireState,fingerprint,validateClinical,approvalIssues } from './policy';
 import { clinicalProcessor } from './bedrock';
@@ -122,6 +124,13 @@ export async function publishLink(planId:string,owner:string){
   await AccountModel.updateMany({episodeId:episode.episodeId},{$set:{state:'REVOKED'}},{session});await PatientSessionModel.deleteMany({episodeId:episode.episodeId},{session});
   await InvitationModel.create([{episodeId:episode.episodeId,invitationId,email:LINK_RECIPIENT,tokenHash:hash(token),codeHash,validUntil:episode.expiresAt,expiresAt:episode.expiresAt,state:'SENT',version:episode.version,createdAt:new Date(),attempts:0}],{session});
  });
+ // Fixture plans (demo-fixture.ts) also publish their hand-written Spanish version.
+ const plan=await ClinicalPlanModel.findOne({episodeId:episode.episodeId});
+ if(plan?.model?.modelId===DEMO_FIXTURE_MODEL && plan.content){
+  const content=generatedContent.parse(plan.content),now=new Date();
+  const fields=translatableFields(content).map(f=>({path:f.path,source:f.text,text:DEMO_SPANISH[f.path] ?? f.text,problems:[]}));
+  await TranslationModel.findOneAndUpdate({episodeId:episode.episodeId,language:'es'},{$set:{basedOnVersion:episode.version,status:'published',fields,model:{modelId:DEMO_FIXTURE_MODEL,region:'none',generatedAt:now},publishedBy:owner,publishedAt:now,updatedAt:now,expiresAt:episode.expiresAt}},{upsert:true});
+ }
  return {state:'ACCESS_GRANTED',link:`${process.env.APP_URL || 'http://localhost:3000'}/p/${token}`,code,expiresAt:episode.expiresAt,codeDelivery:'shown-to-clinician'};
 }
 export async function revokeAccess(planId:string,owner:string){const episode=await ownedEpisode(planId,owner,true);requireState(episode.state,['APPROVED','ACCESS_GRANTED','ACTIVE','REVOKED']);if(episode.state==='REVOKED')return {state:'REVOKED'};await transaction(async session=>{const changed=await EpisodeModel.updateOne({_id:episode._id,version:episode.version,expiresAt:{$gt:new Date()}},{$set:{state:'REVOKED'},$unset:{grantVersion:1,grantInvitationId:1}},{session});if(!changed.modifiedCount)throw new AppError(409,'Discharge changed. Reload before revoking.');await invalidate(episode.episodeId,session);});return {state:'REVOKED'};}

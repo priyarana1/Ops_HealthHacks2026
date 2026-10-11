@@ -6,6 +6,7 @@ import { handler } from '@/lib/security/http';
 import { AppError } from '@/lib/security/core';
 import { createDischarge,addSource,correctSource,processDischarge,reviewDischarge,approveDischarge,grantAccess,publishLink,revokeAccess,snapshot,MAX_DOCUMENT_BYTES } from './service';
 import { ownedEpisode } from './repository';
+import { listTranslations,translatePlan,editTranslatedField,retranslateFields,publishTranslation } from './translation';
 import { SourceModel,EpisodeModel,PatientReferenceModel,ClinicalPlanModel } from './models';
 import { activatePatient,loginPatient,logoutPatient,patientIdentity,patientPlan,patientLimit,linkStatus,verifyLink } from './patient';
 const json=boundedJson;
@@ -19,7 +20,17 @@ export const providerBackend=handler(async(req:NextRequest)=>{
   const diagnoses=new Map((await ClinicalPlanModel.find({episodeId:{$in:ids}}).select('episodeId content.diagnoses content.summary').lean()).map(p=>[p.episodeId,p.content?.diagnoses?.[0]?.text || p.content?.summary?.text || null]));
   return {episodes:episodes.map(e=>({...e,displayName:names.get(e.episodeId) || null,diagnosis:diagnoses.get(e.episodeId) || null}))};
  }}
- const planId=z.string().uuid().parse(parts[0]),action=parts[1];if(parts.length>2)throw new AppError(404,'Endpoint not found.');
+ const planId=z.string().uuid().parse(parts[0]),action=parts[1];if(parts.length>(action==='translations'?4:2))throw new AppError(404,'Endpoint not found.');
+ if(action==='translations'){
+  // /discharges/:planId/translations[/:lang[/retranslate|/publish]]
+  const lang=parts[2],step=parts[3];
+  if(!lang && req.method==='GET')return listTranslations(planId,owner);
+  if(lang && !step && req.method==='POST')return translatePlan(planId,owner,lang);
+  if(lang && !step && req.method==='PATCH')return editTranslatedField(planId,owner,lang,await json(req));
+  if(lang && step==='retranslate' && req.method==='POST')return retranslateFields(planId,owner,lang,await json(req));
+  if(lang && step==='publish' && req.method==='POST')return publishTranslation(planId,owner,lang);
+  throw new AppError(404,'Endpoint not found.');
+ }
  if(!action && req.method==='GET')return snapshot(planId,owner);
  if(action==='sources' && req.method==='GET'){const episode=await ownedEpisode(planId,owner);return {sources:await SourceModel.find({episodeId:episode.episodeId}).lean()};}
  if(action==='sources' && req.method==='PATCH')return correctSource(planId,owner,await json(req));

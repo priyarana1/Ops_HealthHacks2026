@@ -14,10 +14,11 @@ import { LANGUAGE_LABELS } from "@/types/plan";
 import type { DischargeListItem } from "@/types/patient";
 import { api } from "@/components/client-api";
 import { planStatus } from "@/lib/discharge-status";
+import { shortDiagnosis } from "@/lib/plan-adapter";
 
 interface EpisodeRow { planId: string; state: string; createdAt: string; displayName: string | null; diagnosis: string | null }
 const when = (iso: string) => new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-const toRow = (e: EpisodeRow): DischargeListItem => ({ planId: e.planId, patientName: e.displayName ?? "Unnamed patient", mrn: "—", diagnosis: e.diagnosis?.replace(/^[^:]{1,60}:\s*/, "") || "Draft not generated yet", languages: ["en"], status: planStatus(e.state), lastUpdated: when(e.createdAt), openable: true });
+const toRow = (e: EpisodeRow): DischargeListItem => ({ planId: e.planId, patientName: e.displayName ?? "Unnamed patient", mrn: "—", diagnosis: (e.diagnosis && shortDiagnosis([e.diagnosis])) || "Draft not generated yet", languages: ["en"], status: planStatus(e.state), lastUpdated: when(e.createdAt), openable: true });
 // Eleanor's scripted walkthrough stays available as a labelled demo row.
 const demoRow = DISCHARGE_LIST.find((row) => row.planId === DEMO_PLAN_ID)!;
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { GeneratedContent } from "../src/lib/backend/contracts";
-import { cleanProse, toPlanContent, readingGrade, plainLanguageSwaps, openMedicationFlags, patientText } from "../src/lib/plan-adapter";
+import { cleanProse, toPlanContent, readingGrade, plainLanguageSwaps, openMedicationFlags, patientText, splitItems, shortDiagnosis } from "../src/lib/plan-adapter";
 import { planContentSchema } from "../src/types/plan";
 
 const ev = (quote: string) => ({ sourceId: "12345678-1234-4234-8234-123456789012", quote });
@@ -65,5 +65,36 @@ describe("plan adapter", () => {
   it("lists real before/after rewrites and counts open medication flags", () => {
     expect(plainLanguageSwaps(content)[0]).toEqual(["Monitor daily weight at approximately the same time each morning.", "Weigh yourself each morning."]);
     expect(openMedicationFlags(content)).toBe(1);
+  });
+});
+
+describe("plan adapter with a translation", () => {
+  const es: GeneratedContent = { ...content, medications: content.medications.map((m) => ({ ...m, plainLanguage: m.status === "STOP" ? "Reemplazado por losartan." : m.plainLanguage })) };
+  const plan = toPlanContent(es, "es", content);
+  it("uses labels in the patient's language and decides stop/hold from the English", () => {
+    expect(plan.whyTitle).toBe("Por qué estuvo en el hospital");
+    expect(plan.medications.stop[0].note).toBe("Deje de tomar este medicamento. Reemplazado por losartan.");
+  });
+  it("keeps medicine names and doses from the approved plan", () => expect(plan.medications.new[0]).toMatchObject({ name: "Furosemide", dose: "40 mg" }));
+  it("drops a translated status label only where the English had one", () => {
+    const labelled: GeneratedContent = { ...content, medications: content.medications.map((m, i) => (i === 0 ? { ...m, plainLanguage: "• NUEVO: Tome Furosemide 40 mg." } : m)) };
+    expect(toPlanContent(labelled, "es", content).medications.new[0].note).toBe("Tome Furosemide 40 mg.");
+    const plainEnglish: GeneratedContent = { ...content, medications: content.medications.map((m, i) => (i === 0 ? { ...m, plainLanguage: "A water pill." } : m)) };
+    expect(toPlanContent({ ...plainEnglish, medications: plainEnglish.medications.map((m, i) => (i === 0 ? { ...m, plainLanguage: "Nota: una pastilla." } : m)) }, "es", plainEnglish).medications.new[0].note).toBe("Nota: una pastilla.");
+  });
+});
+
+describe("keeping patient items short", () => {
+  it("splits a bulleted instruction into separate items and drops its lead-in heading", () => {
+    expect(splitItems("Nurses usually go over:\n• Finish the antibiotic.\n• Care for your IV line.")).toEqual(["Finish the antibiotic.", "Care for your IV line."]);
+    expect(splitItems("• Weigh daily. • Keep a log.")).toEqual(["Weigh daily.", "Keep a log."]);
+  });
+  it("makes a warning zone item per bullet", () => {
+    const warned = toPlanContent({ ...content, warningSigns: [{ text: "Get urgent care for:\n• New chest pain.\n• Fainting.", level: "URGENT", evidence: ev("x") }] });
+    expect(warned.warnings).toEqual([{ severity: "red", items: ["New chest pain.", "Fainting."] }]);
+  });
+  it("summarises diagnoses as up to three condition names", () => {
+    expect(shortDiagnosis(["• Infective endocarditis: an infection of the mitral valve. • Long-term heart failure that recently got worse, with reduced EF. • Pulmonary edema: fluid in the lungs. • Anemia."])).toBe("Infective endocarditis, Long-term heart failure that recently got worse, Pulmonary edema");
+    expect(shortDiagnosis(["Problems when you came to the hospital: Your heart failure got worse."])).toBe("Your heart failure got worse");
   });
 });

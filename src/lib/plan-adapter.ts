@@ -1,5 +1,5 @@
 import type { GeneratedContent } from "@/lib/backend/contracts";
-import type { Medication, PlanContent, WarningZone } from "@/types/plan";
+import type { Language, Medication, PlanContent, WarningZone } from "@/types/plan";
 
 /**
  * Converts the backend's reviewed discharge content into the frontend PlanContent shape
@@ -21,26 +21,60 @@ export function cleanProse(text: string | null | undefined): string {
 
 const isHeading = (text: string) => /:$/.test(text);
 
-function frequencyText(m: BackendMedication) {
-  const duration = m.duration ? (/^for\b/i.test(m.duration) ? m.duration : `for ${m.duration}`) : "";
+/** Splits one stored instruction into separate items: one per line or bullet, without lead-in headings. */
+export function splitItems(text: string): string[] {
+  return text.split(/\n+|\s+[•▪◦·]\s+/).map(cleanProse).filter((t) => t && !isHeading(t));
+}
+
+/** A short diagnosis for the profile and dashboard: up to three condition names, without explanations. */
+export function shortDiagnosis(texts: string[]): string {
+  const names = texts
+    .flatMap(splitItems)
+    .map((t) => t.replace(/^(problems|diagnos\w*|health problems|reason)[^:]{0,50}:\s*/i, ""))
+    .map((t) => t.split(/[:.;,(]/)[0].trim())
+    .filter(Boolean);
+  return [...new Set(names)].slice(0, 3).join(", ");
+}
+
+function frequencyText(m: BackendMedication, lang: Language) {
+  // Translated durations carry their own wording ("durante 3 días más"); only English gets "for".
+  const duration = m.duration ? (lang !== "en" || /^for\b/i.test(m.duration) ? m.duration : `for ${m.duration}`) : "";
   return [m.frequency, duration].filter(Boolean).join(" ") || undefined;
 }
 
-function toMedication(m: BackendMedication): Medication {
+// Fixed labels shown in the patient's language. The section title matches the sample translations.
+const LABELS: Record<Language, { why: string; stop: string; hold: string }> = {
+  en: { why: "Why you were in the hospital", stop: "Stop taking this.", hold: "Do not take this for now." },
+  es: { why: "Por qué estuvo en el hospital", stop: "Deje de tomar este medicamento.", hold: "No tome este medicamento por ahora." },
+  zh: { why: "您为什么住院", stop: "停止服用此药。", hold: "暂时不要服用此药。" },
+  ar: { why: "لماذا كنت في المستشفى", stop: "توقف عن تناول هذا الدواء.", hold: "لا تتناول هذا الدواء في الوقت الحالي." },
+};
+
+function toMedication(m: BackendMedication, lang: Language, english: BackendMedication): Medication {
   let note = cleanProse(m.plainLanguage) || undefined;
-  if (m.status === "STOP" && !/\bstop/i.test(note ?? "")) note = `Stop taking this.${note ? " " + note : ""}`;
-  if (m.status === "HOLD" && !/\bhold|\bheld|for now/i.test(note ?? "")) note = `Do not take this for now.${note ? " " + note : ""}`;
+  // A translated status label ("NUEVO:") is dropped only where the English had one ("NEW:").
+  if (lang !== "en" && note && /^\s*[•▪◦·*-]?\s*(NEW|CONTINUE|CHANGED?|STOP(?:PED)?|HOLD|HELD)\s*:/i.test(english.plainLanguage)) note = note.replace(/^[^:：]{1,15}[:：]\s*/, "") || note;
+  // Whether the explanation already says stop/hold is decided on the approved English wording.
+  const said = cleanProse(english.plainLanguage);
+  if (m.status === "STOP" && !/\bstop/i.test(said)) note = `${LABELS[lang].stop}${note ? " " + note : ""}`;
+  if (m.status === "HOLD" && !/\bhold|\bheld|for now/i.test(said)) note = `${LABELS[lang].hold}${note ? " " + note : ""}`;
   return {
     name: m.formulation && !m.name.toLowerCase().includes(m.formulation.toLowerCase()) ? `${m.name} (${m.formulation})` : m.name,
     dose: m.dose ?? undefined,
     route: m.route ?? undefined,
-    frequency: frequencyText(m),
+    frequency: frequencyText(m, lang),
     note,
   };
 }
 
-export function toPlanContent(content: GeneratedContent): PlanContent {
-  const items = (list: { text: string }[]) => list.map((i) => cleanProse(i.text)).filter((t) => t && !isHeading(t));
+/**
+ * `content` may be a translation of `english` (same structure, translated prose); fixed labels
+ * follow `lang`. For English, both are the same content.
+ */
+export function toPlanContent(content: GeneratedContent, lang: Language = "en", english: GeneratedContent = content): PlanContent {
+  const med = (status: (m: BackendMedication) => boolean) =>
+    content.medications.map((m, i) => [m, english.medications[i] ?? m] as const).filter(([m]) => status(m)).map(([m, e]) => toMedication(m, lang, e));
+  const items = (list: { text: string }[]) => list.flatMap((i) => splitItems(i.text));
   const why = cleanProse(content.summary?.text) || items(content.hospitalCourse).join(" ");
   // The patient checklist gives the first weigh-in, sodium and fluid items special treatment by id.
   const special: Array<[string, RegExp]> = [["weigh", /\bweigh/i], ["salt", /\bsodium\b|\bsalt\b/i], ["fluids", /\bfluid/i]];
@@ -54,16 +88,16 @@ export function toPlanContent(content: GeneratedContent): PlanContent {
   );
   const appointments = [...items(content.appointments), ...items(content.labsAndMonitoring)].map((type) => ({ type, scheduleNeeded: true }));
   const zone = (severity: WarningZone["severity"], levels: string[]): WarningZone[] => {
-    const zoneItems = content.warningSigns.filter((w) => levels.includes(w.level)).map((w) => cleanProse(w.text)).filter(Boolean);
+    const zoneItems = content.warningSigns.filter((w) => levels.includes(w.level)).flatMap((w) => splitItems(w.text));
     return zoneItems.length ? [{ severity, items: zoneItems }] : [];
   };
   return {
-    whyTitle: "Why you were in the hospital",
+    whyTitle: LABELS[lang].why,
     why,
     medications: {
-      new: content.medications.filter((m) => m.status === "NEW" || m.status === "CHANGE").map(toMedication),
-      keep: content.medications.filter((m) => m.status === "CONTINUE").map(toMedication),
-      stop: content.medications.filter((m) => m.status === "STOP" || m.status === "HOLD").map(toMedication),
+      new: med((m) => m.status === "NEW" || m.status === "CHANGE"),
+      keep: med((m) => m.status === "CONTINUE"),
+      stop: med((m) => m.status === "STOP" || m.status === "HOLD"),
     },
     todos,
     appointments,

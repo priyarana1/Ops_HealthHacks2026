@@ -11,11 +11,13 @@ import { Banner } from "@/components/ui/Banner";
 import { Stepper } from "@/components/ui/Stepper";
 import { ToastProvider, useToast } from "@/components/ui/Toast";
 import { clsx } from "@/lib/clsx";
-import { Upload, List, Check, ShieldCheck, Lock, AlertTriangle, ChevronRight, RefreshCw, Copy } from "lucide-react";
+import { Upload, List, Check, ShieldCheck, Lock, AlertTriangle, ChevronRight, RefreshCw, Copy, Globe } from "lucide-react";
 import { api } from "@/components/client-api";
 import { DocumentDrop, MAX_UPLOAD_BYTES } from "@/components/document-drop";
 import type { GeneratedContent } from "@/lib/backend/contracts";
-import type { PlanContent } from "@/types/plan";
+import type { Language, PlanContent } from "@/types/plan";
+import { UI } from "@/lib/i18n";
+import { applyTranslation } from "@/lib/translation-fields";
 import { toPlanContent, readingGrade, patientText, plainLanguageSwaps, openMedicationFlags } from "@/lib/plan-adapter";
 import { planStatus } from "@/lib/discharge-status";
 
@@ -24,8 +26,10 @@ import { planStatus } from "@/lib/discharge-status";
  * Capture (upload or paste) -> AI draft -> clinician review and approval -> translate -> publish.
  */
 
-const STEPS = ["Capture", "Review", "Translate", "Publish"];
-type Step = 0 | 1 | 2 | 3;
+// The Translate step is switched off for now; set to true to bring it back (the backend is unchanged).
+const TRANSLATE_STEP = false;
+const STEPS = TRANSLATE_STEP ? ["Capture", "Review", "Translate", "Publish"] : ["Capture", "Review", "Publish"];
+type Stage = "capture" | "review" | "translate" | "publish";
 const REVIEWED = "Reviewed against the source document by the approving clinician.";
 
 interface Snapshot {
@@ -33,6 +37,13 @@ interface Snapshot {
   patient?: { displayName: string };
   plan?: { content?: GeneratedContent; model?: { modelId: string; generatedAt: string } };
   sources: { sourceId: string; kind: string; documentType: string; text: string }[];
+}
+
+const LANGS = { es: "Spanish", zh: "Mandarin", ar: "Arabic" } as const;
+type TransLang = keyof typeof LANGS;
+interface TranslationView {
+  language: TransLang; status: "verified" | "blocked" | "published"; current: boolean; basedOnVersion: number; publishedAt?: string;
+  fields: { path: string; source: string; text: string; backTranslation?: string; problems: string[] }[];
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -52,8 +63,8 @@ function WizardInner({ id }: { id: string }) {
   const [busy, setBusy] = useState("");
   const [generating, setGenerating] = useState(false);
   const [seconds, setSeconds] = useState(0);
-  const [after, setAfter] = useState<2 | 3>(2);
-  const autoStarted = useRef(false), placed = useRef(false);
+  const [view, setView] = useState<Exclude<Stage, "capture">>("publish");
+  const autoStarted = useRef(false);
 
   const load = useCallback(async () => setData(await api("discharges/" + id)), [id]);
 
@@ -84,19 +95,21 @@ function WizardInner({ id }: { id: string }) {
   const content = data?.plan?.content;
   const state = data?.episode.state;
   const approved = !!state && ["APPROVED", "ACCESS_GRANTED", "ACTIVE"].includes(state);
-  useEffect(() => {
-    if (!placed.current && state) { placed.current = true; if (state === "ACCESS_GRANTED" || state === "ACTIVE") setAfter(3); }
-  }, [state]);
-  const step: Step = isNew ? 0 : approved ? after : 1;
+  const stage: Stage = isNew ? "capture" : approved ? view : "review";
+  const step = { capture: 0, review: 1, translate: 2, publish: STEPS.length - 1 }[stage];
+  const [translations, setTranslations] = useState<TranslationView[]>([]);
+  const refreshTranslations = useCallback(() => api(`discharges/${id}/translations`).then((r: { translations: TranslationView[] }) => setTranslations(r.translations)).catch(() => {}), [id]);
+  useEffect(() => { if (approved) refreshTranslations(); }, [approved, refreshTranslations]);
+  const publishedLanguages = translations.filter((t) => t.status === "published" && t.current).map((t) => t.language);
   const crumb = data?.patient?.displayName ? `${data.patient.displayName} · ${STEPS[step]}` : `New discharge · ${STEPS[step]}`;
 
   return (
     <ProviderShell active="new" crumb={crumb}>
       <Stepper steps={STEPS} current={step} />
       {error && <Banner tone="red" icon="alert">{error}</Banner>}
-      {step === 0 && <CaptureStep busy={busy} run={run} onCreated={(planId) => router.replace(`/provider/discharge/${planId}?generate=1`)} />}
-      {step === 1 && !data && !error && <p className="muted">Loading discharge…</p>}
-      {step === 1 && data && (
+      {stage === "capture" && <CaptureStep busy={busy} run={run} onCreated={(planId) => router.replace(`/provider/discharge/${planId}?generate=1`)} />}
+      {stage === "review" && !data && !error && <p className="muted">Loading discharge…</p>}
+      {stage === "review" && data && (
         generating || state === "PROCESSING"
           ? <GeneratingCard seconds={seconds} stale={!generating} onRefresh={() => load().catch((e) => setError(e.message))} />
           : !content
@@ -104,10 +117,10 @@ function WizardInner({ id }: { id: string }) {
                 <p className="muted">{data.sources.length ? "No plain-language draft yet." : "No discharge document was saved for this record."}</p>
                 {data.sources.length > 0 && <Button onClick={generate}>Generate plain-language draft</Button>}
               </Card>
-            : <ReviewStep data={data} content={content} busy={busy} run={run} setData={setData} toast={toast} regenerate={generate} onContinue={() => setAfter(2)} />
+            : <ReviewStep data={data} content={content} busy={busy} run={run} setData={setData} toast={toast} regenerate={generate} onContinue={() => setView(TRANSLATE_STEP ? "translate" : "publish")} />
       )}
-      {step === 2 && <TranslatePlaceholder onContinue={() => setAfter(3)} />}
-      {step === 3 && data && <PublishStep data={data} busy={busy} run={run} toast={toast} reload={load} onBack={() => setAfter(2)} onExpired={(message) => { setData(undefined); setError(message); }} />}
+      {TRANSLATE_STEP && stage === "translate" && data && content && <TranslateStep planId={id} content={content} translations={translations} setTranslations={setTranslations} toast={toast} onContinue={() => setView("publish")} />}
+      {stage === "publish" && data && <PublishStep data={data} languages={publishedLanguages} busy={busy} run={run} toast={toast} reload={async () => { await load(); await refreshTranslations(); }} onBack={() => setView(TRANSLATE_STEP ? "translate" : "review")} onExpired={(message) => { setData(undefined); setError(message); }} />}
     </ProviderShell>
   );
 }
@@ -314,7 +327,7 @@ function ReviewStep({ data, content, busy, run, setData, toast, regenerate, onCo
           <>
             <Chip tone="sage"><Check size={14} aria-hidden="true" />English approved</Chip>
             <span className="cp-bar-sp" />
-            <Button onClick={onContinue}>Continue to translate <ChevronRight size={16} aria-hidden="true" /></Button>
+            <Button onClick={onContinue}>{TRANSLATE_STEP ? "Continue to translate" : "Continue to publish"} <ChevronRight size={16} aria-hidden="true" /></Button>
           </>
         ) : (
           <>
@@ -332,8 +345,9 @@ function ReviewStep({ data, content, busy, run, setData, toast, regenerate, onCo
 }
 
 /* ---------- Patient preview (review step, English), built from the real draft ---------- */
-function PlanPreview({ plan }: { plan: PlanContent }) {
-  const groups: Array<["new" | "keep" | "stop", string]> = [["new", "NEW — start these"], ["keep", "KEEP TAKING"], ["stop", "STOP or HOLD"]];
+function PlanPreview({ plan, lang = "en" }: { plan: PlanContent; lang?: Language }) {
+  const t = UI[lang];
+  const groups: Array<["new" | "keep" | "stop", string]> = [["new", t.groupNew], ["keep", t.groupKeep], ["stop", t.groupStop]];
   const yellow = plan.warnings.find((w) => w.severity === "yellow"), red = plan.warnings.find((w) => w.severity === "red");
   return (
     <div>
@@ -373,21 +387,153 @@ function PlanPreview({ plan }: { plan: PlanContent }) {
   );
 }
 
-/* ---------- Translate and publish: connected in the next build steps ---------- */
-function TranslatePlaceholder({ onContinue }: { onContinue: () => void }) {
+/* ---------- Translate & verify ---------- */
+function fieldLabel(path: string, content: GeneratedContent) {
+  const [section, index, key] = path.split(".");
+  if (section === "summary") return "Why you were in the hospital";
+  if (section === "medications") {
+    const part = { plainLanguage: "explanation", frequency: "how often", route: "how to take it", duration: "how long" }[key] ?? key;
+    return `${content.medications[Number(index)]?.name ?? "Medicine"} — ${part}`;
+  }
+  const names: Record<string, string> = { hospitalCourse: "Hospital stay", diagnoses: "Diagnosis", dailyActions: "Daily to-do", diet: "Diet", fluids: "Fluids", activity: "Activity", otherInstructions: "Instruction", appointments: "Appointment", labsAndMonitoring: "Test or monitoring", warningSigns: "Warning sign" };
+  return `${names[section] ?? section} ${Number(index) + 1}`;
+}
+
+function TranslateStep({ planId, content, translations, setTranslations, toast, onContinue }: {
+  planId: string; content: GeneratedContent; translations: TranslationView[];
+  setTranslations: React.Dispatch<React.SetStateAction<TranslationView[]>>; toast: (m: string) => void; onContinue: () => void;
+}) {
+  const [tab, setTab] = useState<TransLang>("es");
+  const [working, setWorking] = useState(""), [seconds, setSeconds] = useState(0), [error, setError] = useState("");
+  const [editing, setEditing] = useState<{ path: string; text: string } | null>(null);
+  const t = translations.find((x) => x.language === tab);
+  const base = `discharges/${planId}/translations/${tab}`;
+  async function act(label: string, fn: () => Promise<TranslationView>, message: string) {
+    setWorking(label); setError(""); setSeconds(0);
+    const timer = setInterval(() => setSeconds((s) => s + 1), 1000);
+    try {
+      const next = await fn();
+      setTranslations((list) => [...list.filter((x) => x.language !== next.language), next]);
+      setEditing(null); toast(message);
+    } catch (e) { setError((e as Error).message); }
+    finally { clearInterval(timer); setWorking(""); }
+  }
+  const flagged = t?.fields.filter((f) => f.problems.length) ?? [];
+  const valuesOk = !!t && !t.fields.some((f) => f.problems.some((p) => /missing or changed|adds|medicine name|does not contain/i.test(p)));
+  const dir = tab === "ar" ? "rtl" : "ltr", langClass = clsx(tab === "zh" && "lang-zh", tab === "ar" && "lang-ar");
+  const busyLabel = (label: string, idle: string) => (working === label ? `Working… ${seconds}s` : idle);
+
   return (
     <>
       <h1>Translate &amp; verify</h1>
-      <Card style={{ textAlign: "center", padding: 36 }}>
-        <p className="muted">Real translation with a back-translation safety check is being connected. English is approved and ready.</p>
-      </Card>
-      <div className="cp-bar"><span className="cp-bar-sp" /><Button variant="ghost" onClick={onContinue}>Continue to publish <ChevronRight size={16} aria-hidden="true" /></Button></div>
+      <p className="muted">English is approved. Translate each language, then check the back-translation. Drug names and numbers are kept identical.</p>
+      {error && <Banner tone="red" icon="alert">{error}</Banner>}
+      <div className="cp-tabs" role="tablist">
+        {(Object.keys(LANGS) as TransLang[]).map((k) => {
+          const x = translations.find((y) => y.language === k);
+          return (
+            <button key={k} className={clsx("cp-tab", tab === k && "cp-tab--on")} role="tab" aria-selected={tab === k} onClick={() => { setTab(k); setEditing(null); }} disabled={!!working}>
+              <Globe size={16} aria-hidden="true" />
+              {LANGS[k]}
+              {x && !x.current ? <Chip tone="amber">Out of date</Chip> : x?.status === "published" ? <Chip tone="sage">Published</Chip> : x?.status === "blocked" ? <Chip tone="red">Blocked</Chip> : x ? <Chip tone="sage">Verified</Chip> : null}
+            </button>
+          );
+        })}
+      </div>
+
+      {working === "translate" ? (
+        <Card>
+          <h2>Translating to {LANGS[tab]} and checking every line…</h2>
+          <p className="muted">{seconds}s · usually under a minute. Each line is translated back to English independently and compared with the approved plan.</p>
+          <div className="cp-prog" role="progressbar" aria-valuenow={Math.min(95, Math.round((seconds / 50) * 100))} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${Math.min(95, Math.round((seconds / 50) * 100))}%` }} /></div>
+        </Card>
+      ) : !t || !t.current ? (
+        <Card style={{ textAlign: "center", padding: 36 }}>
+          {t && !t.current && <p><b>The English plan changed after this translation.</b> Translate it again.</p>}
+          <p className="muted">Safety-critical lines are checked by back-translation after translating.</p>
+          <Button onClick={() => act("translate", () => api(base, "POST"), `${LANGS[tab]} translated and checked.`)} disabled={!!working} style={{ marginTop: 8 }}>
+            <Globe size={18} aria-hidden="true" />
+            Translate to {LANGS[tab]} (one click)
+          </Button>
+        </Card>
+      ) : (
+        <>
+          <div className="cp-grid2">
+            <div>
+              <h2 style={{ marginBottom: 8 }}>{LANGS[tab]} patient text</h2>
+              <div className={clsx("cp-tr-text", flagged.length > 0 && "cp-tr-text--bad", langClass)} dir={dir} lang={tab}>
+                <PlanPreview plan={toPlanContent(applyTranslation(content, t.fields), tab, content)} lang={tab} />
+              </div>
+              <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                {valuesOk ? <Chip tone="sage"><Check size={14} aria-hidden="true" />Drug names &amp; numbers identical</Chip> : <Chip tone="red"><AlertTriangle size={14} aria-hidden="true" />Drug names or numbers changed</Chip>}
+                {tab === "ar" && <Chip tone="blue">Right-to-left layout</Chip>}
+                {tab === "zh" && <Chip tone="blue">Noto Sans SC</Chip>}
+              </div>
+            </div>
+            <div>
+              <h2 style={{ marginBottom: 8 }}>Back-translation check</h2>
+              {flagged.length ? (
+                <Banner tone="red" icon="alert">
+                  <b>High-risk mismatch.</b> Publishing {LANGS[tab]} is blocked until {flagged.length === 1 ? "this line is" : `these ${flagged.length} lines are`} fixed.
+                  <div style={{ marginTop: 8 }}>
+                    <Button variant="red" size="sm" disabled={!!working} onClick={() => act("retranslate", () => api(`${base}/retranslate`, "POST", {}), "Flagged lines re-translated and re-checked.")}>
+                      {busyLabel("retranslate", "Re-translate flagged lines")}
+                    </Button>
+                  </div>
+                </Banner>
+              ) : (
+                <Banner tone="sage" icon="check">All {t.fields.length} lines match the approved English.</Banner>
+              )}
+              {flagged.map((f) => (
+                <div className="cp-flagcard" key={f.path}>
+                  <b>{fieldLabel(f.path, content)}</b>
+                  <div style={{ background: "var(--sage-bg)", color: "var(--sage-fg)", borderRadius: 8, padding: "6px 10px", margin: "6px 0" }}><b>Original (EN):</b> {f.source}</div>
+                  <div style={{ background: "var(--red-bg)", color: "var(--red-fg)", borderRadius: 8, padding: "6px 10px", margin: "6px 0" }}><b>Back-translated (EN):</b> {f.backTranslation ?? "—"}</div>
+                  <ul style={{ margin: "4px 0 8px", paddingLeft: 18 }}>{f.problems.map((p) => <li key={p}>{p}</li>)}</ul>
+                  {editing?.path === f.path ? (
+                    <>
+                      <label className="cp-label" htmlFor={"edit-" + f.path}>{LANGS[tab]} text</label>
+                      <textarea id={"edit-" + f.path} className={clsx("cp-textarea", langClass)} dir={dir} lang={tab} value={editing.text} onChange={(e) => setEditing({ path: f.path, text: e.target.value })} style={{ minHeight: 90 }} />
+                      <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                        <Button size="sm" disabled={!!working || !editing.text.trim()} onClick={() => act("edit", () => api(base, "PATCH", editing), "Line updated and re-checked.")}>{busyLabel("edit", "Save and re-check")}</Button>
+                        <Button variant="ghost" size="sm" onClick={() => setEditing(null)} disabled={!!working}>Cancel</Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className={langClass} dir={dir} lang={tab} style={{ margin: "4px 0" }}>{f.text}</p>
+                      <Button variant="ghost" size="sm" disabled={!!working} onClick={() => setEditing({ path: f.path, text: f.text })}>Edit</Button>
+                    </>
+                  )}
+                </div>
+              ))}
+              <p className="muted" style={{ fontSize: 13 }}>Machine translation, checked line by line with an independent back-translation. Before real use, a qualified medical interpreter must review it.</p>
+            </div>
+          </div>
+
+          <div className="cp-bar">
+            <Button variant="ghost" disabled={!!working} onClick={() => act("translate", () => api(base, "POST"), `${LANGS[tab]} translated again and checked.`)}><RefreshCw size={16} aria-hidden="true" />Translate again</Button>
+            <span className="cp-bar-sp" />
+            {t.status === "published" ? (
+              <Chip tone="sage"><Check size={14} aria-hidden="true" />{LANGS[tab]} published</Chip>
+            ) : (
+              <Button disabled={flagged.length > 0 || !!working} title={flagged.length ? "Blocked: fix the flagged lines first" : ""} onClick={() => act("publish", () => api(`${base}/publish`, "POST"), `${LANGS[tab]} published. The patient can now choose it.`)}>
+                {busyLabel("publish", `Publish ${LANGS[tab]}`)}
+              </Button>
+            )}
+            <Button variant="ghost" onClick={onContinue} disabled={!!working}>Continue to publish <ChevronRight size={16} aria-hidden="true" /></Button>
+          </div>
+        </>
+      )}
+      {!t && !working && (
+        <div className="cp-bar"><span className="cp-bar-sp" /><Button variant="ghost" onClick={onContinue}>Skip — publish in English only <ChevronRight size={16} aria-hidden="true" /></Button></div>
+      )}
     </>
   );
 }
 
-function PublishStep({ data, busy, run, toast, reload, onBack, onExpired }: {
-  data: Snapshot; busy: string;
+function PublishStep({ data, languages, busy, run, toast, reload, onBack, onExpired }: {
+  data: Snapshot; languages: TransLang[]; busy: string;
   run: (label: string, fn: () => Promise<void>) => Promise<void>;
   toast: (m: string) => void; reload: () => Promise<void>; onBack: () => void; onExpired: (message: string) => void;
 }) {
@@ -426,7 +572,7 @@ function PublishStep({ data, busy, run, toast, reload, onBack, onExpired }: {
           ) : (
             <p className="muted" style={{ marginTop: 6 }}>{published ? "The link is shown only when it is issued. Issue a new code to get a new link." : "A secure link is created when you publish."}</p>
           )}
-          <p style={{ margin: "16px 0 0" }}>Languages: <b>English</b></p>
+          <p style={{ margin: "16px 0 0" }}>Languages: <b>{["English", ...languages.map((l) => LANGS[l])].join(", ")}</b></p>
         </Card>
         <div>
           {issued ? (
@@ -444,7 +590,7 @@ function PublishStep({ data, busy, run, toast, reload, onBack, onExpired }: {
         </div>
       </div>
       <div className="cp-bar">
-        <Button variant="ghost" onClick={onBack}>Back to translate</Button>
+        <Button variant="ghost" onClick={onBack}>{TRANSLATE_STEP ? "Back to translate" : "Back to review"}</Button>
         <span className="cp-bar-sp" />
         {published && <Chip tone="sage"><Check size={14} aria-hidden="true" />Published</Chip>}
         <Button onClick={publish} disabled={!!busy}>{busy === "Publishing…" ? busy : published ? "Issue a new code" : "Publish to patient"}</Button>

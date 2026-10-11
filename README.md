@@ -55,7 +55,11 @@ Use the scripted demo as a fallback if the AI is slow during a live demo. The co
    invents pill counts; the original wording is kept instead.
 3. **Review.** Source document next to the patient preview, reading level, and review flags. The clinician
    marks flags reviewed, confirms the discharge time, and approves.
-4. **Translate.** Coming next: Spanish, Mandarin and Arabic with a back-translation safety check.
+4. **Translate (optional).** Spanish, Mandarin or Arabic, one click each (about a minute). Medicine names and
+   doses are never translated. Each line is checked in code (numbers, units, medicine names), translated back
+   to English independently, and compared with the approved plan. A mismatch blocks that language until the
+   clinician re-translates or edits the line; then they publish it. Patients only see published languages.
+   This is a safety net, not certification: real use needs review by a qualified medical interpreter.
 5. **Publish.** Creates the patient link and a 6-digit code (shown once to the nurse). The code works until
    the plan expires; 5 wrong tries lock the link; issuing a new code revokes the old link.
 6. **Patient app.** The approved plan: medicines grouped new / keep taking / stop or hold, daily to-dos,

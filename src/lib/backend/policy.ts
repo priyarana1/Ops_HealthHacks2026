@@ -27,8 +27,8 @@ export function sectionHeading(text:string,quote:string){
  const at=text.indexOf(quote);if(at<0)return '';
  return text.slice(0,at).split('\n').slice(0,-1).reverse().map(l=>l.trim()).find(l=>l && l.length<=40 && !/^(?:[•▪◦·*-]|\d+[.)])\s/.test(l) && !/[.]$/.test(l)) || '';
 }
-const quantities=(v:string)=>v.match(/\d+(?:[.,/]\d+)*(?:\s*(?:mcg|mg|kg|mL|lb|units|grams?|liters?|g|L|%)(?![a-zA-Z]))?/gi) || [];
-const quantityKey=(v:string)=>v.replace(/\s+/g,'').toLowerCase();
+export const quantities=(v:string)=>v.match(/\d+(?:[.,/]\d+)*(?:\s*(?:mcg|mg|kg|mL|lb|units|grams?|liters?|g|L|%)(?![a-zA-Z]))?/gi) || [];
+export const quantityKey=(v:string)=>v.replace(/\s+/g,'').toLowerCase();
 // Definitions and teach-back questions are optional extras. An unsupported number there should not
 // force a full regeneration: drop the item and tell the clinician. Instruction sections stay strict.
 export function pruneOptionalItems(content:GeneratedContent){

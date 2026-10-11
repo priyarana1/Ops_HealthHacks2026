@@ -525,12 +525,13 @@ const SAMPLE_MED_PERIODS: Record<string, MedPeriod[]> = {
 /** Illustrative times of day for a medicine, from its prescribed frequency. Never a clinical instruction. */
 function medPeriods(m: Medication): MedPeriod[] {
   if (SAMPLE_MED_PERIODS[m.name]) return SAMPLE_MED_PERIODS[m.name];
+  // English and Spanish wording (translated plans keep the same schedule).
   const f = (m.frequency ?? "").toLowerCase();
-  if (/night|bedtime/.test(f)) return ["night"];
-  if (/four times|4 times|qid|every 6 hours/.test(f)) return ["morning", "midday", "evening", "night"];
-  if (/three times|3 times|tid|every 8 hours/.test(f)) return ["morning", "midday", "evening"];
-  if (/twice|two times|2 times|bid|every 12 hours/.test(f)) return ["morning", "evening"];
-  if (/once|daily|every day|a day|every morning|qd/.test(f)) return ["morning"];
+  if (/night|bedtime|noche|acostarse/.test(f)) return ["night"];
+  if (/four times|4 times|qid|every 6 hours|cuatro veces|cada 6 horas/.test(f)) return ["morning", "midday", "evening", "night"];
+  if (/three times|3 times|tid|every 8 hours|tres veces|cada 8 horas/.test(f)) return ["morning", "midday", "evening"];
+  if (/twice|two times|2 times|bid|every 12 hours|dos veces|cada 12 horas/.test(f)) return ["morning", "evening"];
+  if (/once|daily|every day|a day|every morning|qd|una vez|al día|diari|cada mañana/.test(f)) return ["morning"];
   return [];
 }
 

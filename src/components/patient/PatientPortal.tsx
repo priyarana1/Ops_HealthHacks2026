@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { PatientApp, type CodeCheck, type PatientData } from "@/components/patient/PatientApp";
-import { cleanProse, toPlanContent } from "@/lib/plan-adapter";
+import { shortDiagnosis, toPlanContent } from "@/lib/plan-adapter";
 import type { GeneratedContent } from "@/lib/backend/contracts";
+import type { Language } from "@/types/plan";
 
 /**
  * Real patient entry for /p/<token>: asks the server about the link, verifies the 6-digit code,
@@ -28,10 +29,12 @@ export function PatientPortal({ token }: { token: string }) {
   const loadPlan = useCallback(async () => {
     const response = await fetch("/api/patient/discharge-plan", { cache: "no-store" });
     if (!response.ok) throw new Error("Plan unavailable.");
-    const plan: { displayName: string | null; expiresAt: string; content: GeneratedContent } = await response.json();
+    const plan: { displayName: string | null; expiresAt: string; content: GeneratedContent; translations?: Partial<Record<Language, GeneratedContent>> } = await response.json();
     const name = plan.displayName || "there";
-    const diagnosis = plan.content.diagnoses.map((d) => cleanProse(d.text)).find((t) => t && !t.endsWith(":"))?.replace(/^[^:]{1,60}:\s*/, "") ?? "";
-    setData({ name, firstName: name.split(" ")[0], diagnosis, expiresAt: plan.expiresAt, content: { en: toPlanContent(plan.content) }, demo: false });
+    const diagnosis = shortDiagnosis(plan.content.diagnoses.map((d) => d.text));
+    // English plus every clinician-published translation; the language picker offers only these.
+    const translated = Object.entries(plan.translations ?? {}).map(([lang, content]) => [lang, toPlanContent(content!, lang as Language, plan.content)]);
+    setData({ name, firstName: name.split(" ")[0], diagnosis, expiresAt: plan.expiresAt, content: { en: toPlanContent(plan.content), ...Object.fromEntries(translated) }, demo: false });
   }, []);
 
   useEffect(() => {
