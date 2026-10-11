@@ -1,2 +1,0 @@
-import Link from 'next/link';
-export default function Patient() { return <main className="patient"><h1>Your recovery plan</h1><section className="card"><h2>Welcome to ClearPath</h2><p>Open the private invitation your care team gave you. Enter the six-digit code to see your approved instructions.</p><p>Do not enter a medical record number or Epic ID.</p><Link className="button" href="/patient/dashboard">Open my signed-in plan</Link></section></main>; }

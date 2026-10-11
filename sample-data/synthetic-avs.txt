@@ -1,6 +1,0 @@
-SYNTHETIC DEMONSTRATION ONLY — NOT A REAL PATIENT
-Patient: Morgan Example
-Reason for hospitalization: Dehydration.
-Discharge instructions: Rest at home today.
-Follow-up: Call the clinic to arrange your follow-up visit.
-No medication instructions are supplied in this synthetic example.

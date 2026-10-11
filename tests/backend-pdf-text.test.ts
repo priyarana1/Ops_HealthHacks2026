@@ -1,6 +1,7 @@
 import { describe,it,expect } from 'vitest';
 import { normalizePdfText } from '../src/lib/backend/documents';
 import { sectionHeading,validateClinical,pruneOptionalItems } from '../src/lib/backend/policy';
+import { applyValidatedRewrites } from '../src/lib/backend/simplification';
 import type { GeneratedContent,SourceProvenance } from '../src/lib/backend/contracts';
 // Shape of pdf-parse output for the synthetic Patient 1 discharge PDF (sample-data/discharge-pdfs).
 const raw=['Hospital Course','The patient presented with 5 days of progressive dyspnea, orthopnea, bilateral lower-','extremity edema, and productive cough.','','-- 1 of 3 --','','Discharge Medications','New medications','• \tLosartan 25 mg by mouth once daily for heart failure and blood pressure','control.','• \tAmoxicillin-clavulanate 875/125 mg by mouth twice daily for 3 additional','days to complete treatment for pneumonia.','Continue','• \tMetoprolol succinate 50 mg once daily.','Stopped/held','• \tSpironolactone — held pending repeat renal function and potassium.','• \tFollow a low-sodium diet, generally targeting approximately 2 grams of','sodium daily.','Seek urgent medical attention for:','','-- 2 of 3 --','','• \tChest pain or pressure.'].join('\n');
@@ -40,4 +41,20 @@ describe('Quote matching ignores typography only',()=>{
  const check=(quote:string)=>()=>validateClinical({...blank,diagnoses:[{text:'Heart failure.',evidence:{sourceId:id,quote}}]},[src]);
  it('accepts curly apostrophes, dash variants and non-breaking spaces',()=>{expect(check('Weigh daily per the physician’s plan.')).not.toThrow();expect(check('Spironolactone - held pending')).not.toThrow();});
  it('still rejects a quote with different words',()=>expect(check('Spironolactone — stopped pending')).toThrow('does not match'));
+});
+describe('Wording drift checks in the clinical validator',()=>{
+ const id='12345678-1234-4234-8234-123456789012';
+ const text='Follow a low-sodium diet, about 2 grams of sodium daily.\nFurosemide 40 mg by mouth once daily.';
+ const src:SourceProvenance={sourceId:id,kind:'FINAL_AVS',text,createdAt:new Date(),documentType:'application/pdf',transcriptConfirmed:false};
+ const blank:GeneratedContent={language:'en',summary:null,hospitalCourse:[],diagnoses:[],medications:[],dailyActions:[],diet:[],fluids:[],activity:[],otherInstructions:[],appointments:[],labsAndMonitoring:[],warningSigns:[],definitions:[],teachBackQuestions:[],practicalBarriers:[],issues:[]};
+ const diet=(t:string)=>validateClinical({...blank,diet:[{text:t,evidence:{sourceId:id,quote:'Follow a low-sodium diet, about 2 grams of sodium daily.'}}]},[src]).map(w=>w.id);
+ const quote='Furosemide 40 mg by mouth once daily.';
+ const med=(plainLanguage:string)=>validateClinical({...blank,medications:[{name:'Furosemide',dose:'40 mg',route:'by mouth',frequency:'once daily',duration:null,formulation:null,status:'NEW',notes:'',plainLanguage,evidence:{sourceId:id,quote}}]},[src]).map(w=>w.id);
+ it('flags sodium written as salt, but not faithful wording',()=>{expect(diet('Eat about 2 grams of salt each day.')).toContain('sodium-as-salt-0');expect(diet('Eat about 2 grams of sodium each day.')).not.toContain('sodium-as-salt-0');});
+ it('flags added dosing times and invented pill counts in medicine explanations',()=>{expect(med('Take 40 mg every morning.')).toContain('added-timing-0');expect(med('Take one pill of 40 mg once daily.')).toContain('pill-count-0');expect(med('A water pill: 40 mg by mouth once daily.').filter(i=>/^(added-timing|pill-count)-/.test(i))).toEqual([]);});
+ it('rejects a sodium-to-salt rewrite during simplification and keeps the source wording',()=>{
+  const extraction:GeneratedContent={...blank,diet:[{text:'Follow a low-sodium diet, about 2 grams of sodium daily.',evidence:{sourceId:id,quote:'Follow a low-sodium diet, about 2 grams of sodium daily.'}}]};
+  const {content,rejectedPaths}=applyValidatedRewrites(extraction,{rewrites:[{path:'diet.0.text',text:'Eat low salt, about 2 grams of salt a day.'}]},[src]);
+  expect(rejectedPaths).toEqual(['diet.0.text']);expect(content.diet[0].text).toBe('Follow a low-sodium diet, about 2 grams of sodium daily.');
+ });
 });

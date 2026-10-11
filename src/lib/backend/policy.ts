@@ -39,6 +39,9 @@ export function pruneOptionalItems(content:GeneratedContent){
  if(removed)content.issues.push({id:'optional-items-removed',severity:'warning',description:`${removed} AI-written definition or teach-back item(s) were removed because they contained numbers not found in the source.`,resolution:null});
  return content;
 }
+const TIMING_WORDS=/\b(morning|evening|night|nightly|bedtime|breakfast|lunch|dinner|meals?|food|empty stomach)\b/gi;
+const NIGHT_TIMING=/\b(evening|night|nightly|bedtime)\b/i;
+const PILL_COUNT=/\btake\s+(?:\d+|one|two|three|a|an|half(?: a)?)\s+(?:pill|tablet|capsule)s?\b/i;
 export function validateClinical(content:GeneratedContent,sources:SourceProvenance[]) {
  const refs=new Map(sources.map(s=>[s.sourceId,s]));
  const warnings:GeneratedContent['issues']=[];
@@ -63,6 +66,15 @@ export function validateClinical(content:GeneratedContent,sources:SourceProvenan
   if(instructional)for(const n of numbers(quote))if(!generatedNumbers.has(canonicalQuantity(n)) && !warnings.some(w=>w.id===`quantity-${i}`))warnings.push({id:`quantity-${i}`,severity:'critical',description:`${paths[i]}: the source says "${n}" but the patient text leaves it out. Source: "${quote}"`,resolution:null});
   const negation=/\b(?:not|never|avoid|stop|hold|unless|if|provided|until|pending|without)\b/gi;
   if(instructional)for(const token of quote.match(negation) || [])if(!new RegExp('\\b'+token+'\\b','i').test(text))warnings.push({id:`condition-${i}-${token.toLowerCase()}`,severity:'critical',description:`${paths[i]}: the source says "${token}" but the patient text leaves it out. Source: "${quote}"`,resolution:null});
+  // Wording drift that changes an instruction. In simplification, a rewrite that adds one of these is rejected
+  // and the source wording is kept. Sodium and salt are different amounts (2 g sodium is about 5 g salt).
+  if(/\bsodium\b/i.test(quote) && !/\bsalt\b/i.test(quote) && /\bsalt\b/i.test(text))warnings.push({id:`sodium-as-salt-${i}`,severity:'critical',description:`${paths[i]}: the source says sodium, but the patient text says salt. These are different amounts. Source: "${quote}"`,resolution:null});
+  if('plainLanguage' in item){
+   const timing=[...new Set(text.match(TIMING_WORDS) || [])].filter(w=>!new RegExp(`\\b${w}`,'i').test(quote) && !(NIGHT_TIMING.test(w) && NIGHT_TIMING.test(quote)));
+   if(timing.length)warnings.push({id:`added-timing-${i}`,severity:'critical',description:`${paths[i]}: the patient text adds "${timing.join('", "')}", but the source does not say when to take it. Source: "${quote}"`,resolution:null});
+   const pills=text.match(PILL_COUNT)?.[0];
+   if(pills && !quote.toLowerCase().includes(pills.toLowerCase()))warnings.push({id:`pill-count-${i}`,severity:'critical',description:`${paths[i]}: the patient text says "${pills}", but the source gives a strength, not a pill count. Source: "${quote}"`,resolution:null});
+  }
  }
  const actions=[...content.dailyActions,...content.diet,...content.fluids,...content.activity,...content.otherInstructions,...content.appointments,...content.labsAndMonitoring,...content.warningSigns,...content.teachBackQuestions,...content.practicalBarriers];
  for(const action of actions)if(['CHART_CONTEXT','EPIC_FHIR'].includes(refs.get(action.evidence.sourceId)!.kind))throw new AppError(422,'Chart context cannot establish finalized discharge actions.');
