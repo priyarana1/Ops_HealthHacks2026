@@ -177,7 +177,7 @@ function WizardInner() {
   const ss = String(sec % 60).padStart(2, "0");
 
   return (
-    <ProviderShell active="new" crumb={`Demo walkthrough (sample data, no AI) · ${STEPS[step]}`}>
+    <ProviderShell active="new" crumb={`${ELEANOR.name} · ${STEPS[step]}`}>
       <Stepper steps={STEPS} current={step} />
 
       {/* STEP 0 — CAPTURE */}
@@ -185,7 +185,7 @@ function WizardInner() {
         <>
           <h1>Capture instructions</h1>
           <Card style={{ margin: "16px 0" }}>
-            <h3 className="muted">Patient (synthetic)</h3>
+            <h3 className="muted">Patient</h3>
             <p style={{ fontSize: 17, margin: "6px 0 0" }}>
               <b>{ELEANOR.name}</b> · {ELEANOR.age} · MRN {ELEANOR.mrn}
             </p>
@@ -928,7 +928,7 @@ function PublishStep({
         </Card>
         <div>
           <Banner tone="blue" icon="lock">
-            <Chip tone="blue">MOCK: not a real text message</Chip>
+            <Chip tone="blue">Text message to patient</Chip>
             <div style={{ fontSize: 16, marginTop: 6 }}>
               RWJ: Your ClearPath code is 418-203. Expires in 15 minutes.
             </div>

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { identity } from '@/lib/auth/session';
 import { handler } from '@/lib/security/http';
 import { AppError } from '@/lib/security/core';
-import { createDischarge,addSource,correctSource,processDischarge,reviewDischarge,approveDischarge,grantAccess,publishLink,revokeAccess,snapshot,MAX_DOCUMENT_BYTES } from './service';
+import { createDischarge,addSource,correctSource,processDischarge,cancelProcessing,reviewDischarge,approveDischarge,grantAccess,publishLink,revokeAccess,snapshot,MAX_DOCUMENT_BYTES } from './service';
 import { ownedEpisode } from './repository';
 import { listTranslations,translatePlan,editTranslatedField,retranslateFields,publishTranslation } from './translation';
 import { SourceModel,EpisodeModel,PatientReferenceModel,ClinicalPlanModel } from './models';
@@ -20,12 +20,12 @@ export const providerBackend=handler(async(req:NextRequest)=>{
   const diagnoses=new Map((await ClinicalPlanModel.find({episodeId:{$in:ids}}).select('episodeId content.diagnoses content.summary').lean()).map(p=>[p.episodeId,p.content?.diagnoses?.[0]?.text || p.content?.summary?.text || null]));
   return {episodes:episodes.map(e=>({...e,displayName:names.get(e.episodeId) || null,diagnosis:diagnoses.get(e.episodeId) || null}))};
  }}
- const planId=z.string().uuid().parse(parts[0]),action=parts[1];if(parts.length>(action==='translations'?4:2))throw new AppError(404,'Endpoint not found.');
+ const planId=z.string().uuid().parse(parts[0]),action=parts[1];if(parts.length>(action==='translations'?4:action==='process'?3:2))throw new AppError(404,'Endpoint not found.');
  if(action==='translations'){
   // /discharges/:planId/translations[/:lang[/retranslate|/publish]]
   const lang=parts[2],step=parts[3];
   if(!lang && req.method==='GET')return listTranslations(planId,owner);
-  if(lang && !step && req.method==='POST')return translatePlan(planId,owner,lang);
+  if(lang && !step && req.method==='POST')return translatePlan(planId,owner,lang,req.signal);
   if(lang && !step && req.method==='PATCH')return editTranslatedField(planId,owner,lang,await json(req));
   if(lang && step==='retranslate' && req.method==='POST')return retranslateFields(planId,owner,lang,await json(req));
   if(lang && step==='publish' && req.method==='POST')return publishTranslation(planId,owner,lang);
@@ -39,7 +39,8 @@ export const providerBackend=handler(async(req:NextRequest)=>{
    if(Number(req.headers.get('content-length'))>MAX_DOCUMENT_BYTES+16384)throw new AppError(413,'Document exceeds 5 MB.');const form=await boundedMultipart(req,MAX_DOCUMENT_BYTES+16384),file=form.get('file');if(!(file instanceof File) || file.size>MAX_DOCUMENT_BYTES)throw new AppError(413,'Provide a document under 5 MB.');return addSource(planId,owner,{requestId:form.get('requestId'),kind:form.get('kind'),text:'document upload',transcriptConfirmed:false},file);
   }return addSource(planId,owner,await json(req));
  }
- if(action==='process' && req.method==='POST')return processDischarge(planId,owner);
+ if(action==='process' && parts[2]==='cancel' && req.method==='POST')return cancelProcessing(planId,owner);
+ if(action==='process' && !parts[2] && req.method==='POST')return processDischarge(planId,owner);
  if((action==='review' || !action) && req.method==='PATCH')return reviewDischarge(planId,owner,await json(req));
  if(action==='approve' && req.method==='POST')return approveDischarge(planId,owner,await json(req));
  if(action==='grant-access' && req.method==='POST')return grantAccess(planId,owner,await json(req));

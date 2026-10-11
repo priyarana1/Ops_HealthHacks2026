@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { GeneratedContent } from "../src/lib/backend/contracts";
-import { cleanProse, toPlanContent, readingGrade, plainLanguageSwaps, openMedicationFlags, patientText, splitItems, shortDiagnosis } from "../src/lib/plan-adapter";
+import { cleanProse, medicationSchedule, toPlanContent, readingGrade, plainLanguageSwaps, openMedicationFlags, patientText, splitItems, shortDiagnosis } from "../src/lib/plan-adapter";
 import { planContentSchema } from "../src/types/plan";
 
 const ev = (quote: string) => ({ sourceId: "12345678-1234-4234-8234-123456789012", quote });
@@ -42,7 +42,8 @@ describe("plan adapter", () => {
     expect(plan.medications.keep.map((m) => m.name)).toEqual(["Apixaban"]);
     expect(plan.medications.stop.map((m) => m.name)).toEqual(["Lisinopril", "Spironolactone"]);
     expect(plan.medications.new[0]).toMatchObject({ dose: "40 mg", route: "by mouth", frequency: "once daily", note: "Furosemide 40 mg by mouth once daily to remove extra fluid." });
-    expect(plan.medications.new[1].frequency).toBe("twice daily for 3 additional days");
+    expect(plan.medications.new[1]).toMatchObject({ frequency: "twice daily", duration: "for 3 additional days" });
+    expect(medicationSchedule(plan.medications.new[1])).toBe("twice daily for 3 additional days");
   });
   it("keeps STOP and HOLD distinct in the patient note", () => {
     expect(plan.medications.stop[0].note).toMatch(/^Stop taking this\./);

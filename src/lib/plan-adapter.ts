@@ -40,10 +40,15 @@ export function shortDiagnosis(texts: string[]): string {
   return [...new Set(names)].slice(0, 3).join(", ");
 }
 
-function frequencyText(m: BackendMedication, lang: PlanLanguage) {
+function durationText(m: BackendMedication, lang: PlanLanguage) {
   // Translated durations carry their own wording ("durante 3 días más"); only English gets "for".
-  const duration = m.duration ? (lang !== "en" || /^for\b/i.test(m.duration) ? m.duration : `for ${m.duration}`) : "";
-  return [m.frequency, duration].filter(Boolean).join(" ") || undefined;
+  if (!m.duration) return undefined;
+  return lang !== "en" || /^for\b/i.test(m.duration) ? m.duration : `for ${m.duration}`;
+}
+
+/** Frequency and duration together ("twice daily for 3 additional days"). */
+export function medicationSchedule(m: Medication): string | undefined {
+  return [m.frequency, m.duration].filter(Boolean).join(" ") || undefined;
 }
 
 // Fixed labels shown in the patient's language. The section title matches the sample translations.
@@ -80,7 +85,8 @@ function toMedication(m: BackendMedication, lang: PlanLanguage, english: Backend
     dose: m.dose ?? undefined,
     tabletCount: m.tabletCount,
     route: m.route ?? undefined,
-    frequency: frequencyText(m, lang),
+    frequency: m.frequency ?? undefined,
+    duration: durationText(m, lang),
     note,
   };
 }

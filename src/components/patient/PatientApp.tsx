@@ -9,6 +9,9 @@ import {
   Pill,
   ListChecks,
   ClipboardPen,
+  HeartPulse,
+  Download,
+  X,
   MessageCircle,
   Lock,
   AlertTriangle,
@@ -22,7 +25,6 @@ import {
   ShieldCheck,
   Sunrise,
   Sun,
-  Sunset,
   Moon,
   UserRound,
   Utensils,
@@ -32,6 +34,8 @@ import {
   CircleHelp,
 } from "lucide-react";
 import { ELEANOR_PLAN_CONTENT } from "@/mocks/plan";
+import { medicationSchedule } from "@/lib/plan-adapter";
+import { downloadProgressPdf, type ProgressReport } from "@/lib/progress-pdf";
 import { DEMO_OTP, ELEANOR } from "@/mocks/patient";
 import { UI } from "@/lib/i18n";
 import { LANGUAGE_LABELS, LANGUAGE_DIR } from "@/types/plan";
@@ -91,6 +95,9 @@ export function PatientApp({ expired = false, data = DEMO_DATA, verify, signedIn
 
   const t = UI[lang];
   const dir = LANGUAGE_DIR[lang];
+  // Today's date, set after mount so it uses the patient's own clock and time zone.
+  const [today, setToday] = useState<Date | null>(null);
+  useEffect(() => { setToday(new Date()); }, []);
   const daysLeft = Math.max(0, Math.ceil((new Date(data.expiresAt).getTime() - Date.now()) / 864e5));
 
   useEffect(() => {
@@ -146,23 +153,13 @@ export function PatientApp({ expired = false, data = DEMO_DATA, verify, signedIn
     <PatientDataContext.Provider value={data}>
     <div className="pt-stage">
       <div className="pt-device pt-clinical" ref={deviceRef}>
-        {/* prototype chrome */}
-        <div className="pt-proto">
-          <span className="pt-demo-label">{data.demo ? "Demonstration · Sample patient data" : "Synthetic test patient · Not real patient data"}</span>
-          {data.demo && !bare && (
-            <button
-              type="button"
-              className="demo"
-              onClick={() => setScreen("expired")}
-            >
-              DEMO: expire
-            </button>
-          )}
-        </div>
 
         <div className="pt-top">
-          <div className="pt-portal-brand"><Brand size={28} /><span>Heart care recovery portal</span></div>
-          {!bare && <span className="pt-who">{data.firstName}</span>}
+          <div className="pt-portal-brand"><Brand size={28} /></div>
+          <div className="pt-top-meta">
+            {!bare && <span className="pt-who">{data.firstName}</span>}
+            {today && <time className="pt-today" dateTime={today.toISOString().slice(0, 10)}>{today.toLocaleDateString(t.localeDate, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</time>}
+          </div>
         </div>
 
         <main
@@ -184,6 +181,7 @@ export function PatientApp({ expired = false, data = DEMO_DATA, verify, signedIn
               lang={lang}
               daysLeft={daysLeft}
               go={setScreen}
+              done={done}
             />
           )}
           {screen === "meds" && (
@@ -191,9 +189,9 @@ export function PatientApp({ expired = false, data = DEMO_DATA, verify, signedIn
           )}
           {screen === "todo" && <TodoScreen lang={lang} go={setScreen} call={call} done={done} setDone={setDone} />}
           {screen === "articles" && <ArticlesScreen lang={lang} go={setScreen} />}
-          {screen === "profile" && <ProfileScreen lang={lang} changeLang={changeLang} members={members} setMembers={setMembers} />}
+          {screen === "profile" && <ProfileScreen lang={lang} changeLang={changeLang} members={members} setMembers={setMembers} done={done} />}
           {screen === "chat" && <ChatScreen lang={lang} setSos={setSos} call={call} />}
-          {screen === "checkin" && <CheckinScreen onClose={() => setScreen("todo")} />}
+          {screen === "checkin" && <CheckinScreen onClose={() => setScreen("todo")} onExit={() => setScreen("home")} />}
           {screen === "expired" && (
             <ExpiredScreen call={call} onRestart={() => setScreen("otp")} />
           )}
@@ -236,7 +234,6 @@ export function PatientApp({ expired = false, data = DEMO_DATA, verify, signedIn
                 <ol><li>Call 911 for emergency assistance.</li><li>Do not drive yourself.</li></ol>
               </div>
               <button className="pt-btn pt-emergency-call" onClick={() => call("911")}><Phone size={22} aria-hidden="true" />Call 911</button>
-              <p className="pt-emergency-note">Demonstration only. This button previews the call screen; it does not place a call or notify your care team.</p>
               <button className="pt-btn back" onClick={() => setSos(false)}>Return to my plan</button>
             </div>
             <footer className="pt-emergency-footer"><ShieldCheck size={16} aria-hidden="true" />ClearPath · Patient recovery support</footer>
@@ -249,11 +246,10 @@ export function PatientApp({ expired = false, data = DEMO_DATA, verify, signedIn
             <div className="box">
               <Phone size={44} aria-hidden="true" />
               <h2 id="callH" style={{ marginTop: 8 }}>
-                Call preview: {calling}
+                Calling {calling}…
               </h2>
-              <p className="fine">Demonstration only. No call is placed.</p>
               <button className="pt-btn" onClick={() => setCalling(null)}>
-                Close preview
+                End call
               </button>
             </div>
           </div>
@@ -330,10 +326,10 @@ function OtpScreen({ onSuccess, verify, initiallyLocked = false }: { onSuccess: 
       >
         <span className="cp-chip cp-chip--blue">
           <Lock size={18} aria-hidden="true" />
-          MOCK: not a real text message
+          Text message
         </span>
         <q>RWJ: Your ClearPath code is 418-203. Expires in 15 minutes.</q>
-        <small>Tap this message to fill in the code (demo shortcut).</small>
+        <small>Tap this message to fill in the code.</small>
       </button>}
       {verify && <p className="fine">Use the 6-digit code your care team gave you at discharge.</p>}
       <div className="pt-otp" role="group" aria-label="6-digit code">
@@ -386,44 +382,67 @@ function OtpScreen({ onSuccess, verify, initiallyLocked = false }: { onSuccess: 
 }
 
 /* ---------- Home ---------- */
+const HOME_COPY = {
+  en: { greeting: ["Good morning", "Good afternoon", "Good evening"], today: "Today", progress: (d: number, n: number) => `${d} of ${n} done`, allDone: "All done for today. Great job!", questionnaire: "Bring me to my questionnaire" },
+  es: { greeting: ["Buenos días", "Buenas tardes", "Buenas noches"], today: "Hoy", progress: (d: number, n: number) => `${d} de ${n} completadas`, allDone: "¡Todo listo por hoy! Muy bien.", questionnaire: "Ir a mi cuestionario" },
+  zh: { greeting: ["早上好", "下午好", "晚上好"], today: "今天", progress: (d: number, n: number) => `已完成 ${d}/${n}`, allDone: "今天的任务都完成了，做得好！", questionnaire: "查看我的问卷" },
+  ar: { greeting: ["صباح الخير", "مساء الخير", "مساء الخير"], today: "اليوم", progress: (d: number, n: number) => `تم إنجاز ${d} من ${n}`, allDone: "أنجزت كل مهام اليوم. أحسنت!", questionnaire: "انتقل إلى استبياني" },
+};
+
 function HomeScreen({
   t,
   lang,
   daysLeft,
   go,
+  done,
 }: {
   t: (typeof UI)[Language];
   lang: Language;
   daysLeft: number;
   go: (s: Screen) => void;
+  done: Record<string, boolean>;
 }) {
   const content = usePlanContent(lang);
   const data = usePatientData();
-  const C = 2 * Math.PI * 38;
+  const copy = HOME_COPY[lang];
+  const C = 2 * Math.PI * 46;
   const off = C * (1 - daysLeft / 30);
   const expDate = new Date(data.expiresAt).toLocaleDateString(
     t.localeDate,
     { year: "numeric", month: "long", day: "numeric" },
   );
+  // Time-of-day greeting, set after mount so it uses the patient's own clock.
+  const [hour, setHour] = useState<number | null>(null);
+  useEffect(() => { setHour(new Date().getHours()); }, []);
+  const greeting = hour === null ? t.hello.replace("Eleanor", data.firstName) : `${copy.greeting[hour < 12 ? 0 : hour < 17 ? 1 : 2]}${lang === "zh" ? "，" : ", "}${data.firstName}${lang === "zh" ? "。" : "."}`;
+  const { completed, total } = todayProgress(content, lang === "es" ? "es" : "en", done);
   return (
-    <section>
-      <h1>{t.hello.replace("Eleanor", data.firstName)}</h1>
+    <section className="pt-home">
+      <h1>{greeting}</h1>
       <p className="lead">{t.sub}</p>
-      <div className="pt-card pt-card--sage pt-count">
+
+      {total > 0 && <section className="pt-card pt-home-today" aria-labelledby="home-today">
+        <div className="pt-home-heading"><span className="pt-home-icon"><ListChecks size={30} aria-hidden="true" /></span><h2 id="home-today">{copy.today}</h2></div>
+        <p className="pt-home-today-count">{completed === total ? copy.allDone : copy.progress(completed, total)}</p>
+        <progress className="pt-plan-progress" value={completed} max={total} aria-label={copy.progress(completed, total)} />
+        <button className="pt-btn pt-btn--big" type="button" onClick={() => go("todo")}>{ARTICLE_COPY[lang].todo}<ChevronRight size={24} className="go" aria-hidden="true" /></button>
+      </section>}
+
+      <div className="pt-card pt-count">
         <div
           className="pt-ring"
           role="img"
           aria-label={`${daysLeft} of 30 days left`}
         >
-          <svg width="92" height="92" viewBox="0 0 92 92">
-            <circle cx="46" cy="46" r="38" fill="none" stroke="currentColor" strokeOpacity="0.2" strokeWidth="9" />
+          <svg width="112" height="112" viewBox="0 0 112 112" aria-hidden="true">
+            <circle cx="56" cy="56" r="46" fill="none" stroke="currentColor" strokeOpacity="0.18" strokeWidth="10" />
             <circle
-              cx="46"
-              cy="46"
-              r="38"
+              cx="56"
+              cy="56"
+              r="46"
               fill="none"
               stroke="currentColor"
-              strokeWidth="9"
+              strokeWidth="10"
               strokeLinecap="round"
               strokeDasharray={C.toFixed(1)}
               strokeDashoffset={off.toFixed(1)}
@@ -433,16 +452,17 @@ function HomeScreen({
         </div>
         <div>
           <h2 style={{ margin: 0 }}>{t.daysLeft(daysLeft)}</h2>
-          <p style={{ margin: "6px 0 0", fontSize: 18 }}>{t.stays(expDate)}</p>
+          <p className="pt-count-note">{t.stays(expDate)}</p>
         </div>
       </div>
-      <div className="pt-card">
-        <h2>{content.whyTitle}</h2>
-        <p style={{ margin: 0 }}>{content.why}</p>
+
+      <div className="pt-card pt-home-why">
+        <div className="pt-home-heading"><span className="pt-home-icon pt-home-icon--red"><HeartPulse size={30} aria-hidden="true" /></span><h2>{content.whyTitle}</h2></div>
+        <p>{content.why}</p>
       </div>
+
       <div className="pt-home-actions">
-        <button className="pt-linkcard" type="button" onClick={() => go("todo")}><ListChecks size={28} aria-hidden="true" /><span><b>{ARTICLE_COPY[lang].todo}</b></span><ChevronRight size={24} className="go" aria-hidden="true" /></button>
-        <button className="pt-linkcard" type="button" onClick={() => go("checkin")}><ClipboardPen size={28} aria-hidden="true" /><span><b>{{ en: "Bring me to my questionnaire", es: "Ir a mi cuestionario", zh: "查看我的问卷", ar: "انتقل إلى استبياني" }[lang]}</b></span><ChevronRight size={24} className="go" aria-hidden="true" /></button>
+        <button className="pt-linkcard" type="button" onClick={() => go("checkin")}><span className="pt-home-icon pt-home-icon--sage"><ClipboardPen size={28} aria-hidden="true" /></span><span><b>{copy.questionnaire}</b></span><ChevronRight size={26} className="go" aria-hidden="true" /></button>
       </div>
       <RecommendedTips lang={lang} />
     </section>
@@ -492,16 +512,25 @@ function ArticlesScreen({ lang, go }: { lang: Language; go: (screen: Screen) => 
   return <section aria-labelledby="articles-title"><h1 id="articles-title">{copy.title}</h1><p className="lead">{copy.intro}</p><RecommendedTips lang={lang} showHeading={false} /><button className="pt-btn pt-btn--ghost" type="button" onClick={() => go("home")} style={{ marginTop: 24 }}>{copy.back}</button></section>;
 }
 
+// Lowercase short words inside English title case ("Twice Daily for 3 Additional Days").
+const MINOR_WORDS = new Set(["a", "an", "and", "as", "at", "by", "for", "in", "of", "on", "or", "per", "the", "to", "with"]);
+/** Capitalizes a schedule or route label: title case in English, first letter elsewhere. */
+function labelCase(text: string | undefined, lang: Language) {
+  if (!text) return text;
+  if (lang !== "en") return text.charAt(0).toLocaleUpperCase(lang) + text.slice(1);
+  return text.split(" ").map((word, i) => (i > 0 && MINOR_WORDS.has(word.toLowerCase()) ? word.toLowerCase() : word.charAt(0).toUpperCase() + word.slice(1))).join(" ");
+}
+
 function pillCountLabel(count: number, lang: Language) {
   return { en: `${count} ${count === 1 ? "pill" : "pills"}`, es: `${count} ${count === 1 ? "pastilla" : "pastillas"}`, zh: `${count} 片`, ar: `${count} حبة` }[lang];
 }
 
 /* ---------- Meds: illustrative daily schedule ---------- */
 const MED_TIMELINE_COPY = {
-  en: { intro: "Your medicines, at a glance.", sample: "Sample times — confirm your schedule with your care team.", morning: "Morning", midday: "Midday", evening: "Evening", night: "Night", daily: "Daily view", details: "More details", none: "No medicines shown at this sample time.", stop: "Do not take these", sampleTime: "Sample time", nightTime: "At night", new: "New", keep: "Continue", doses: "medicines", bedtime: "Bedtime" },
-  es: { intro: "Sus medicinas, de un vistazo.", sample: "Horas de ejemplo — confirme su horario con su equipo de atención.", morning: "Mañana", midday: "Mediodía", evening: "Tarde", night: "Noche", daily: "Vista diaria", details: "Más detalles", none: "No se muestran medicinas a esta hora de ejemplo.", stop: "No tome estas", sampleTime: "Hora de ejemplo", nightTime: "Por la noche", new: "Nueva", keep: "Continuar", doses: "medicinas", bedtime: "Al acostarse" },
-  zh: { intro: "一目了然的用药安排。", sample: "示例时间——请与护理团队确认您的用药时间。", morning: "早晨", midday: "中午", evening: "傍晚", night: "夜间", daily: "每日安排", details: "更多详情", none: "此示例时间没有显示药物。", stop: "不要服用这些药物", sampleTime: "示例时间", nightTime: "夜间服用", new: "新药", keep: "继续", doses: "种药物", bedtime: "睡前" },
-  ar: { intro: "أدويتك في لمحة.", sample: "أوقات توضيحية — أكد جدولك مع فريق الرعاية.", morning: "الصباح", midday: "الظهر", evening: "المساء", night: "الليل", daily: "الجدول اليومي", details: "مزيد من التفاصيل", none: "لا توجد أدوية معروضة في هذا الوقت التوضيحي.", stop: "لا تتناول هذه", sampleTime: "وقت توضيحي", nightTime: "ليلاً", new: "جديد", keep: "استمرار", doses: "أدوية", bedtime: "وقت النوم" },
+  en: { intro: "Your medicines, at a glance.", sample: "Sample times — confirm your schedule with your care team.", morning: "Morning", midday: "Midday", night: "Night", daily: "Daily view", details: "More details", none: "No medicines shown at this sample time.", stop: "Do not take these", sampleTime: "Sample time", nightTime: "At night", new: "New", keep: "Continue", doses: "medicines", bedtime: "Bedtime" },
+  es: { intro: "Sus medicinas, de un vistazo.", sample: "Horas de ejemplo — confirme su horario con su equipo de atención.", morning: "Mañana", midday: "Mediodía", night: "Noche", daily: "Vista diaria", details: "Más detalles", none: "No se muestran medicinas a esta hora de ejemplo.", stop: "No tome estas", sampleTime: "Hora de ejemplo", nightTime: "Por la noche", new: "Nueva", keep: "Continuar", doses: "medicinas", bedtime: "Al acostarse" },
+  zh: { intro: "一目了然的用药安排。", sample: "示例时间——请与护理团队确认您的用药时间。", morning: "早晨", midday: "中午", night: "夜间", daily: "每日安排", details: "更多详情", none: "此示例时间没有显示药物。", stop: "不要服用这些药物", sampleTime: "示例时间", nightTime: "夜间服用", new: "新药", keep: "继续", doses: "种药物", bedtime: "睡前" },
+  ar: { intro: "أدويتك في لمحة.", sample: "أوقات توضيحية — أكد جدولك مع فريق الرعاية.", morning: "الصباح", midday: "الظهر", night: "الليل", daily: "الجدول اليومي", details: "مزيد من التفاصيل", none: "لا توجد أدوية معروضة في هذا الوقت التوضيحي.", stop: "لا تتناول هذه", sampleTime: "وقت توضيحي", nightTime: "ليلاً", new: "جديد", keep: "استمرار", doses: "أدوية", bedtime: "وقت النوم" },
 };
 
 const MED_CARD_COPY = {
@@ -511,18 +540,18 @@ const MED_CARD_COPY = {
   ar: { dose: "الجرعة", purpose: "الغرض", route: "طريقة التناول", label: "راجع ملصق الصيدلية لعدد الأقراص أو كمية السائل. إذا اختلف عن هذه الخطة، اسأل الصيدلي أو فريق الرعاية." },
 };
 
-type MedPeriod = "morning" | "midday" | "evening" | "night";
+type MedPeriod = "morning" | "midday" | "night";
 // Clock times are presentation examples, never clinician-approved instructions.
 // The source specifies frequencies and atorvastatin at night, not exact hours.
 const SAMPLE_MED_PERIODS: Record<string, MedPeriod[]> = {
   Furosemide: ["morning"],
   Losartan: ["morning"],
   Empagliflozin: ["morning"],
-  "Amoxicillin-clavulanate": ["morning", "evening"],
+  "Amoxicillin-clavulanate": ["morning", "night"],
   "Metoprolol succinate": ["morning"],
-  Apixaban: ["morning", "evening"],
+  Apixaban: ["morning", "night"],
   Atorvastatin: ["night"],
-  Metformin: ["morning", "evening"],
+  Metformin: ["morning", "night"],
 };
 
 /** Illustrative times of day for a medicine, from its prescribed frequency. Never a clinical instruction. */
@@ -531,9 +560,9 @@ function medPeriods(m: Medication): MedPeriod[] {
   // English and Spanish wording (translated plans keep the same schedule).
   const f = (m.frequency ?? "").toLowerCase();
   if (/night|bedtime|noche|acostarse/.test(f)) return ["night"];
-  if (/four times|4 times|qid|every 6 hours|cuatro veces|cada 6 horas/.test(f)) return ["morning", "midday", "evening", "night"];
-  if (/three times|3 times|tid|every 8 hours|tres veces|cada 8 horas/.test(f)) return ["morning", "midday", "evening"];
-  if (/twice|two times|2 times|bid|every 12 hours|dos veces|cada 12 horas/.test(f)) return ["morning", "evening"];
+  if (/four times|4 times|qid|every 6 hours|cuatro veces|cada 6 horas/.test(f)) return ["morning", "midday", "night"];
+  if (/three times|3 times|tid|every 8 hours|tres veces|cada 8 horas/.test(f)) return ["morning", "midday", "night"];
+  if (/twice|two times|2 times|bid|every 12 hours|dos veces|cada 12 horas/.test(f)) return ["morning", "night"];
   if (/once|daily|every day|a day|every morning|qd|una vez|al día|diari|cada mañana/.test(f)) return ["morning"];
   return [];
 }
@@ -562,8 +591,7 @@ function MedsScreen({ t, lang }: {
   const slots = [
     { key: "morning" as const, time: "8 AM", Icon: Sunrise },
     { key: "midday" as const, time: "12 PM", Icon: Sun },
-    { key: "evening" as const, time: "8 PM", Icon: Sunset },
-    { key: "night" as const, time: copy.nightTime, Icon: Moon },
+    { key: "night" as const, time: "8 PM", Icon: Moon },
   ];
   const selectedMeds = meds.filter((m) => medPeriods(m).includes(period));
   const helpMed = meds.find((m) => m.name === helpMedicine);
@@ -582,7 +610,7 @@ function MedsScreen({ t, lang }: {
   return (
     <section className="pt-medicine-timeline" aria-labelledby="med-title">
       <h1 id="med-title">{t.medsTitle}</h1>
-      {data.demo && <p className="pt-demo-pill-note">{{ en: "Demo pill counts · Confirm with your pharmacy label.", es: "Cantidad de pastillas de ejemplo · Confirme con la etiqueta de la farmacia.", zh: "示例药片数量 · 请核对药房标签。", ar: "عدد حبات توضيحي · تحقق من ملصق الصيدلية." }[lang]}</p>}
+      {data.demo && <p className="pt-demo-pill-note">{{ en: "Confirm with your pharmacy label.", es: "Confirme con la etiqueta de la farmacia.", zh: "请核对药房标签。", ar: "تحقق من ملصق الصيدلية." }[lang]}</p>}
       <div className="pt-day-timeline pt-pill-case" role="group" aria-label={copy.daily}>
         {slots.map(({ key, time, Icon }) => {
           const count = meds.filter((m) => medPeriods(m).includes(key)).length;
@@ -598,9 +626,8 @@ function MedsScreen({ t, lang }: {
       <div className="pt-dose-list">
         {selectedMeds.length === 0 && <p className="pt-no-doses">{copy.none}</p>}
         {selectedMeds.map((m) => <article className="pt-dose-card" key={m.name}>
-          <div className="pt-dose-main"><Pill size={22} aria-hidden="true" /><div><h3><bdi dir="ltr">{m.name}</bdi></h3><p className="pt-dose-frequency">{m.frequency}</p></div><div className="pt-dose-value"><span>{cardCopy.dose}</span><bdi className="pt-dose-amount">{m.tabletCount ? pillCountLabel(m.tabletCount, lang) : m.dose ?? cardCopy.label}</bdi></div></div>
+          <div className="pt-dose-main"><Pill size={22} aria-hidden="true" /><div><h3><bdi dir="ltr">{m.name}</bdi></h3><p className="pt-dose-frequency">{labelCase(m.frequency, lang)}</p></div><div className="pt-dose-value"><span>{cardCopy.dose}</span><bdi className="pt-dose-amount">{m.tabletCount ? pillCountLabel(m.tabletCount, lang) : m.dose ?? cardCopy.label}</bdi></div></div>
           <button className="pt-medicine-help" type="button" aria-label={`${helpCopy.button}: ${m.name}`} aria-haspopup="dialog" onClick={() => setHelpMedicine(m.name)}><CircleHelp size={28} aria-hidden="true" /><span>{helpCopy.button}</span></button>
-          {m.note && !["Furosemide", "Losartan", "Empagliflozin", ...safetyNoteNames].includes(m.name) && <p className="pt-dose-important">{m.note}</p>}
         </article>)}
       </div>
       </div>
@@ -609,9 +636,9 @@ function MedsScreen({ t, lang }: {
           <h2 id="medicine-help-title" tabIndex={-1}><bdi dir="ltr">{helpMed.name}</bdi></h2>
           <dl className="pt-medicine-help-facts">
             <div><dt>{cardCopy.dose}</dt><dd>{helpMed.tabletCount ? pillCountLabel(helpMed.tabletCount, lang) : helpMed.dose ?? cardCopy.label}</dd></div>
-            <div><dt>{helpCopy.when}</dt><dd>{helpMed.frequency}</dd><dd>{medPeriods(helpMed).map((key) => { const time = slots.find((item) => item.key === key)!; return `${copy[key]} · ${time.time}`; }).join(" / ")}</dd></div>
+            <div><dt>{helpCopy.when}</dt><dd>{labelCase(medicationSchedule(helpMed), lang)}</dd><dd>{medPeriods(helpMed).map((key) => { const time = slots.find((item) => item.key === key)!; return `${copy[key]} · ${time.time}`; }).join(" / ")}</dd></div>
             {helpMed.purpose && <div><dt>{cardCopy.purpose}</dt><dd>{helpMed.purpose}</dd></div>}
-            {helpMed.route && <div><dt>{cardCopy.route}</dt><dd>{helpMed.route}</dd></div>}
+            {helpMed.route && <div><dt>{cardCopy.route}</dt><dd>{labelCase(helpMed.route, lang)}</dd></div>}
           </dl>
           {helpMed.note && !safetyNoteNames.includes(helpMed.name) && <div className="pt-medicine-help-instructions"><h3>{helpCopy.instructions}</h3><p>{helpMed.note}</p></div>}
           <p className="pt-med-label-note">{cardCopy.label}</p>
@@ -632,10 +659,10 @@ function MedsScreen({ t, lang }: {
 }
 
 const CHECKLIST_COPY = {
-  en: { title: "Today’s priorities", reminders: "Keep in mind all day", morning: "Take morning medicines", evening: "Take evening medicines", night: "Take night medicine", schedule: "Sample timing — confirm with your care team.", review: "See medicines and doses" },
-  es: { title: "Prioridades de hoy", reminders: "Recuerde durante el día", morning: "Tome las medicinas de la mañana", evening: "Tome las medicinas de la tarde", night: "Tome la medicina de la noche", schedule: "Horario de ejemplo — confirme con su equipo de atención.", review: "Ver medicinas y dosis" },
-  zh: { title: "今天的重要事项", reminders: "全天注意", morning: "服用早晨药物", evening: "服用傍晚药物", night: "服用夜间药物", schedule: "示例时间——请与护理团队确认。", review: "查看药物和剂量" },
-  ar: { title: "أولويات اليوم", reminders: "تذكّر طوال اليوم", morning: "تناول أدوية الصباح", evening: "تناول أدوية المساء", night: "تناول دواء الليل", schedule: "أوقات توضيحية — أكدها مع فريق الرعاية.", review: "عرض الأدوية والجرعات" },
+  en: { title: "Today’s priorities", reminders: "Keep in mind all day", morning: "Take morning medicines", night: "Take night medicines", schedule: "Sample timing — confirm with your care team.", review: "See medicines and doses" },
+  es: { title: "Prioridades de hoy", reminders: "Recuerde durante el día", morning: "Tome las medicinas de la mañana", night: "Tome las medicinas de la noche", schedule: "Horario de ejemplo — confirme con su equipo de atención.", review: "Ver medicinas y dosis" },
+  zh: { title: "今天的重要事项", reminders: "全天注意", morning: "服用早晨药物", night: "服用夜间药物", schedule: "示例时间——请与护理团队确认。", review: "查看药物和剂量" },
+  ar: { title: "أولويات اليوم", reminders: "تذكّر طوال اليوم", morning: "تناول أدوية الصباح", night: "تناول أدوية الليل", schedule: "أوقات توضيحية — أكدها مع فريق الرعاية.", review: "عرض الأدوية والجرعات" },
 };
 
 function DailyChecklist({ lang, done, setDone, onCheckin }: { onCheckin: () => void; lang: Language; done: Record<string, boolean>; setDone: React.Dispatch<React.SetStateAction<Record<string, boolean>>> }) {
@@ -643,7 +670,7 @@ function DailyChecklist({ lang, done, setDone, onCheckin }: { onCheckin: () => v
   const copy = CHECKLIST_COPY[lang];
   const activeMeds = [...content.medications.new, ...content.medications.keep];
   const tasks = content.todos.filter((item) => !["salt", "fluids", "meds", "checkin"].includes(item.id));
-  const medicationTasks = (["morning", "evening", "night"] as const).map((period) => ({ id: `meds-${period}`, label: ({ en: "Took ALL medications", es: "Tomé TODOS los medicamentos", zh: "已服用所有药物", ar: "تناولت جميع الأدوية" })[lang], period }));
+  const medicationTasks = (["morning", "night"] as const).map((period) => ({ id: `meds-${period}`, label: ({ en: "Took ALL medications", es: "Tomé TODOS los medicamentos", zh: "已服用所有药物", ar: "تناولت جميع الأدوية" })[lang], period }));
   const priorities = [...tasks, ...medicationTasks];
   const doseKey = (period: MedPeriod, name: string) => `dose:${period}:${name}`;
   const periodMeds = (period: MedPeriod) => activeMeds.filter((m) => medPeriods(m).includes(period));
@@ -670,10 +697,10 @@ function DailyChecklist({ lang, done, setDone, onCheckin }: { onCheckin: () => v
       <progress className="pt-plan-progress" aria-label={copy.title} value={completed} max={priorities.length} />
       <p className="pt-checklist-timing">{copy.schedule}</p>
       {medicationTasks.map((medTask) => {
-        const Icon = medTask.period === "morning" ? Sunrise : medTask.period === "evening" ? Sunset : Moon;
+        const Icon = medTask.period === "morning" ? Sunrise : Moon;
         const periodTasks = medTask.period === "morning" ? [...tasks, medTask] : [medTask];
         return <section className={clsx("pt-priority-period", `pt-priority-period--${medTask.period}`)} key={medTask.period}>
-          <div className="pt-period-heading"><span className="pt-period-icon"><Icon size={28} aria-hidden="true" /></span><div><h3>{MED_TIMELINE_COPY[lang][medTask.period]}</h3><span className="pt-period-time">{medTask.period === "morning" ? "8 AM" : medTask.period === "evening" ? "8 PM" : MED_TIMELINE_COPY[lang].nightTime}</span></div><span className="pt-period-progress" aria-label={`${copy.title}: ${periodTasks.filter((item) => isComplete(item.id, done)).length} / ${periodTasks.length}`}>{periodTasks.every((item) => isComplete(item.id, done)) && <Check size={18} aria-hidden="true" />}{periodTasks.filter((item) => isComplete(item.id, done)).length} / {periodTasks.length}</span></div>
+          <div className="pt-period-heading"><span className="pt-period-icon"><Icon size={28} aria-hidden="true" /></span><div><h3>{MED_TIMELINE_COPY[lang][medTask.period]}</h3><span className="pt-period-time">{medTask.period === "morning" ? "8 AM" : "8 PM"}</span></div><span className="pt-period-progress" aria-label={`${copy.title}: ${periodTasks.filter((item) => isComplete(item.id, done)).length} / ${periodTasks.length}`}>{periodTasks.every((item) => isComplete(item.id, done)) && <Check size={18} aria-hidden="true" />}{periodTasks.filter((item) => isComplete(item.id, done)).length} / {periodTasks.length}</span></div>
           {periodTasks.map((item) => <div className="pt-priority-task" key={item.id}>
             <button className="pt-todo" type="button" aria-pressed={isComplete(item.id, done)} onClick={() => toggleTask(item.id)}><span className="box"><Check size={22} aria-hidden="true" /></span><span className="t">{item.id === "weigh" ? PROFILE_COPY[lang].weigh : item.label}</span></button>
             {item.id === medTask.id && <details className="pt-task-medicines"><summary>{copy.review} <span className="pt-med-taken-count">{periodMeds(medTask.period).filter((m) => done[doseKey(medTask.period, m.name)]).length}/{periodMeds(medTask.period).length}</span></summary><ul className="pt-individual-doses">{periodMeds(medTask.period).map((m) => {
@@ -697,12 +724,62 @@ const PROFILE_COPY = {
 
 type SupportMember = { name: string; phone: string };
 
-function ProfileScreen({ lang, changeLang, members, setMembers }: { lang: Language; changeLang: (lang: Language) => void; members: SupportMember[]; setMembers: React.Dispatch<React.SetStateAction<SupportMember[]>> }) {
+const HOSPITAL = "Robert Wood Johnson University Hospital - New Brunswick";
+// The PDF uses Western European fonts, so the report is in Spanish or English.
+const REPORT_COPY = {
+  en: { button: "Download Discharge Progress", heading: "Progress report", title: "Discharge Progress", patient: "Patient", hospital: "Hospital", generated: "Report date", accessUntil: "Plan available until", progress: "Today's progress", done: "done", appointments: "Appointments", scheduled: "Scheduled", morning: "Morning medicines (8 AM)", night: "Night medicines (8 PM)", taken: "Taken", notYet: "Not yet", history: "Progress since discharge", daysTracked: "Days tracked", tasksCompleted: "Tasks completed", day: "Day", date: "Date", tasks: "Done", progressColumn: "Progress", cumulativeNote: "This report is cumulative: each day you use ClearPath adds a new row, for up to 30 days after discharge. Earlier days stay in the report." },
+  es: { button: "Descargar progreso del alta", heading: "Informe de progreso", title: "Progreso del alta", patient: "Paciente", hospital: "Hospital", generated: "Fecha del informe", accessUntil: "Plan disponible hasta", progress: "Progreso de hoy", done: "completadas", appointments: "Citas", scheduled: "Programada", morning: "Medicinas de la mañana (8 AM)", night: "Medicinas de la noche (8 PM)", taken: "Tomadas", notYet: "Pendientes", history: "Progreso desde el alta", daysTracked: "Días registrados", tasksCompleted: "Tareas completadas", day: "Día", date: "Fecha", tasks: "Hechas", progressColumn: "Progreso", cumulativeNote: "Este informe es acumulativo: cada día que use ClearPath se agrega una fila nueva, hasta 30 días después del alta. Los días anteriores se conservan en el informe." },
+};
+const REPORT_BUTTON = { zh: { button: "下载出院进度", heading: "进度报告" }, ar: { button: "تنزيل تقدم الخروج", heading: "تقرير التقدم" } };
+
+/** Today's checklist as shown in the To-do tab: tasks, then morning and night medicines. */
+function todayProgress(content: PlanContent, lang: "en" | "es", done: Record<string, boolean>) {
+  const copy = REPORT_COPY[lang];
+  const activeMeds = [...content.medications.new, ...content.medications.keep];
+  const tasks = content.todos.filter((item) => !["salt", "fluids", "meds", "checkin"].includes(item.id)).map((item) => ({ label: item.id === "weigh" ? PROFILE_COPY[lang].weigh : item.label, done: !!done[item.id] }));
+  const medicines = (["morning", "night"] as const).flatMap((period) => {
+    const list = activeMeds.filter((m) => medPeriods(m).includes(period));
+    if (!list.length) return [];
+    const taken = list.filter((m) => done[`dose:${period}:${m.name}`]).map((m) => m.name), notYet = list.filter((m) => !taken.includes(m.name)).map((m) => m.name);
+    const detail = [taken.length ? `${copy.taken}: ${taken.join(", ")}` : "", notYet.length ? `${copy.notYet}: ${notYet.join(", ")}` : ""].filter(Boolean).join(" · ");
+    return [{ label: copy[period], done: notYet.length === 0, detail }];
+  });
+  const items = [...tasks, ...medicines];
+  return { completed: items.filter((item) => item.done).length, total: items.length, items };
+}
+
+function ProfileScreen({ lang, changeLang, members, setMembers, done }: { lang: Language; changeLang: (lang: Language) => void; members: SupportMember[]; setMembers: React.Dispatch<React.SetStateAction<SupportMember[]>>; done: Record<string, boolean> }) {
   const copy = PROFILE_COPY[lang];
   const content = usePlanContent(lang);
   const data = usePatientData();
   const t = UI[lang];
   const [name, setName] = useState(""), [phone, setPhone] = useState("");
+  const [downloading, setDownloading] = useState(false);
+  const buttonCopy = lang === "en" || lang === "es" ? REPORT_COPY[lang] : REPORT_BUTTON[lang];
+  async function downloadReport() {
+    const reportLang = lang === "es" ? "es" : "en", copy = REPORT_COPY[reportLang], ui = UI[reportLang], profile = PROFILE_COPY[reportLang];
+    const plan = data.content[reportLang] ?? data.content.en ?? content;
+    const progress = todayProgress(plan, reportLang, done);
+    const now = new Date(), dateLong = (d: Date) => d.toLocaleDateString(ui.localeDate, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+    const report: ProgressReport = {
+      fileName: `ClearPath-Discharge-Progress-${(data.firstName || "patient").replace(/[^A-Za-z0-9-]/g, "")}-${now.toISOString().slice(0, 10)}.pdf`,
+      labels: { title: copy.title, patient: copy.patient, hospital: copy.hospital, generated: copy.generated, accessUntil: copy.accessUntil, progress: copy.progress, done: copy.done, stopped: MED_TIMELINE_COPY[reportLang].stop, appointments: copy.appointments, scheduled: copy.scheduled, history: copy.history, daysTracked: copy.daysTracked, tasksCompleted: copy.tasksCompleted, day: copy.day, date: copy.date, tasks: copy.tasks, progressColumn: copy.progressColumn, cumulativeNote: copy.cumulativeNote },
+      patient: data.name, hospital: HOSPITAL, generated: dateLong(now), accessUntil: dateLong(new Date(data.expiresAt)),
+      progress,
+      // Progress is kept for today only, so the cumulative table has one row; each further day of use adds a row.
+      history: [{ day: `${copy.day} 1`, date: now.toLocaleDateString(ui.localeDate, { weekday: "short", month: "long", day: "numeric" }), completed: progress.completed, total: progress.total }],
+      whyTitle: plan.whyTitle, why: plan.why,
+      medicineGroups: (["new", "keep"] as const).map((group) => ({
+        title: group === "new" ? ui.groupNew : ui.groupKeep,
+        rows: plan.medications[group].map((m) => ({ name: m.name, dose: [m.dose, m.tabletCount ? pillCountLabel(m.tabletCount, reportLang) : ""].filter(Boolean).join(" · "), schedule: [labelCase(medicationSchedule(m), reportLang), labelCase(m.route, reportLang)].filter(Boolean).join(" · ") })),
+      })),
+      stopped: plan.medications.stop.map((m) => ({ name: m.name, note: m.note })),
+      appointments: plan.appointments.map((a) => ({ title: a.type, when: a.when, clinic: a.clinic, location: a.location, phone: a.phone })),
+      warnings: plan.warnings.map((zone) => ({ title: zone.severity === "red" ? profile.urgent : profile.team, urgent: zone.severity === "red", items: zone.items })),
+    };
+    setDownloading(true);
+    try { await downloadProgressPdf(report); } finally { setDownloading(false); }
+  }
   const digits = phone.replace(/\D/g, "");
   const memberOk = name.trim().length > 0 && /^\+?[\d\s().-]+$/.test(phone.trim()) && digits.length >= 7 && digits.length <= 15 && !members.some((m) => m.phone.replace(/\D/g, "") === digits);
   function enroll(event: React.FormEvent) {
@@ -711,10 +788,13 @@ function ProfileScreen({ lang, changeLang, members, setMembers }: { lang: Langua
     setMembers((list) => [...list, { name: name.trim(), phone: phone.trim() }]);
     setName(""); setPhone("");
   }
-  return <section aria-labelledby="profile-title">
+  return <section className="pt-profile" aria-labelledby="profile-title">
     <h1 id="profile-title">{copy.title}</h1>
     <section className="pt-card pt-profile-info"><UserRound size={28} aria-hidden="true" /><div><h2>{data.name}</h2>{data.age != null && <p>{copy.age}: {data.age} {copy.years}</p>}<p>{data.demo ? copy.condition : data.diagnosis}</p></div></section>
-    <section className="pt-card"><h2>{copy.language}</h2><label className="pt-language-setting"><span className="sr-only">{copy.language}</span><select value={lang} onChange={(event) => changeLang(event.target.value as Language)} aria-label={copy.language}>{(Object.keys(LANGUAGE_LABELS) as Language[]).filter((key) => data.content[key]).map((key) => <option key={key} value={key} lang={key}>{LANGUAGE_LABELS[key]}</option>)}</select></label></section>
+    <div className="pt-profile-split">
+      <section className="pt-card"><h2>{copy.language}</h2><label className="pt-language-setting"><span className="sr-only">{copy.language}</span><select value={lang} onChange={(event) => changeLang(event.target.value as Language)} aria-label={copy.language}>{(Object.keys(LANGUAGE_LABELS) as Language[]).filter((key) => data.content[key]).map((key) => <option key={key} value={key} lang={key}>{LANGUAGE_LABELS[key]}</option>)}</select></label></section>
+      <section className="pt-card pt-progress-card"><h2>{buttonCopy.heading}</h2><button type="button" className="pt-btn pt-btn--sm" onClick={downloadReport} disabled={downloading}><Download size={20} aria-hidden="true" />{buttonCopy.button}</button></section>
+    </div>
     <section className="pt-card" aria-labelledby="support-title">
       <h2 id="support-title">{copy.support}</h2>
       <form className="pt-support-form" onSubmit={enroll}>
@@ -733,7 +813,7 @@ function ProfileScreen({ lang, changeLang, members, setMembers }: { lang: Langua
     <details className="pt-profile-discharge" open>
       <summary>{copy.full}</summary><p className="muted">{copy.intro}</p>
       <section><h2>{content.whyTitle}</h2><p>{content.why}</p></section>
-      {(["new", "keep", "stop"] as const).map((group) => <section key={group}><h2>{group === "new" ? t.groupNew : group === "keep" ? t.groupKeep : t.groupStop}</h2>{content.medications[group].map((m) => <article className="pt-profile-med" key={m.name}><h3><bdi dir="ltr">{m.name}{m.tabletCount && ` — ${pillCountLabel(m.tabletCount, lang)}`}</bdi></h3>{m.frequency && <p>{m.frequency}{m.route && ` · ${m.route}`}</p>}{m.purpose && <p>{m.purpose}</p>}{m.note && <p>{m.note}</p>}{m.warning && m.warning !== m.note && <p className="pt-profile-warning">{m.warning}</p>}</article>)}{group === "stop" && <><p>{copy.hold}</p>{data.demo && <p>{copy.avoid}</p>}</>}</section>)}
+      {(["new", "keep", "stop"] as const).map((group) => <section key={group}><h2>{group === "new" ? t.groupNew : group === "keep" ? t.groupKeep : t.groupStop}</h2>{content.medications[group].map((m) => <article className="pt-profile-med" key={m.name}><h3><bdi dir="ltr">{m.name}{m.tabletCount && ` — ${pillCountLabel(m.tabletCount, lang)}`}</bdi></h3>{medicationSchedule(m) && <p>{labelCase(medicationSchedule(m), lang)}{m.route && ` · ${labelCase(m.route, lang)}`}</p>}{m.purpose && <p>{m.purpose}</p>}{m.note && <p>{m.note}</p>}{m.warning && m.warning !== m.note && <p className="pt-profile-warning">{m.warning}</p>}</article>)}{group === "stop" && <><p>{copy.hold}</p>{data.demo && <p>{copy.avoid}</p>}</>}</section>)}
       <section><h2>{copy.daily}</h2><ul>{content.todos.map((item) => <li key={item.id}>{item.label}</li>)}</ul></section>
       <section><h2>{copy.visits}</h2><ul>{content.appointments.map((visit) => <li key={visit.type}><b>{visit.type}</b>{visit.when && <><br />{visit.when}</>}</li>)}</ul></section>
       {content.warnings.map((zone) => <section key={zone.severity} className={zone.severity === "red" ? "pt-profile-urgent" : ""}><h2>{zone.severity === "red" ? copy.urgent : copy.team}</h2><ul>{zone.items.map((item) => <li key={item}>{item}</li>)}</ul></section>)}
@@ -752,7 +832,6 @@ function TodoScreen({ lang, go, call, done, setDone }: { go: (screen: Screen) =>
       <DailyChecklist lang={lang} done={done} setDone={setDone} onCheckin={() => go("checkin")} />
 
       <h2 style={{ marginTop: 28 }}>Your appointments</h2>
-      {data.demo && <p className="muted">{{ en: "Demo appointments, addresses, and phone numbers. Links open official RWJBarnabas Health information.", es: "Citas de ejemplo para esta demostración.", zh: "本演示中的预约为示例。", ar: "مواعيد توضيحية لهذا العرض." }[lang]}</p>}
       {(data.demo ? content.appointments.slice(0, 2) : content.appointments).map((a) => (
         <div className="pt-card" key={a.type}>
           <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
@@ -819,7 +898,7 @@ function ChatScreen({
   setSos: (b: boolean) => void;
   call: (who: string) => void;
 }) {
-  const { firstName, demo } = usePatientData();
+  const { firstName } = usePatientData();
   const [msgs, setMsgs] = useState<Bubble[]>([
     {
       who: "bot",
@@ -850,7 +929,7 @@ function ChatScreen({
         setSos(true);
         reply = {
           who: "care",
-          html: "<b>This can be an emergency. Call 911 now.</b> This demonstration does not notify your care team.",
+          html: "<b>This can be an emergency. Call 911 now.</b> This chat does not notify your care team.",
         };
       } else if (/alone|lonely|sad|depress/.test(l)) {
         reply = {
@@ -885,7 +964,6 @@ function ChatScreen({
   return (
     <section aria-labelledby="h-chat">
       <h1 id="h-chat">{CHAT_HELP_LABEL[lang]}</h1>
-      {!demo && <div className="pt-msg" role="note" style={{ background: "var(--amber-bg)", color: "var(--amber-fg)", border: "2px solid var(--amber)" }}><AlertTriangle size={26} aria-hidden="true" /><span>Demo assistant: these are example answers and are not based on your plan. Check your medicines in the Medicines tab, and ask your care team about anything else.</span></div>}
       <HelpScreen lang={lang} call={call} />
       <p className="fine">Answers are based on your approved discharge plan.</p>
       <div className="pt-chat" ref={chatRef} aria-live="polite">
@@ -1020,7 +1098,7 @@ function SymptomBodyMap({ symptom, selected, onChange }: { symptom: "pain" | "sw
   </section>;
 }
 
-function CheckinScreen({ onClose }: { onClose: () => void }) {
+function CheckinScreen({ onClose, onExit }: { onClose: () => void; onExit: () => void }) {
   const [step, setStep] = useState<"mood" | "symptoms" | "categories" | "complete">("mood");
   const [mood, setMood] = useState<number | null>(null);
   const [symptoms, setSymptoms] = useState<string[]>([]);
@@ -1032,6 +1110,7 @@ function CheckinScreen({ onClose }: { onClose: () => void }) {
 
   return (
     <section className="pt-questionnaire" aria-labelledby="h-ci">
+      <button className="pt-questionnaire-close" type="button" onClick={onExit} aria-label="Exit questionnaire and go to Home"><X size={28} aria-hidden="true" /></button>
       <p className="pt-questionnaire-kicker">Daily check-in</p>
       <h1 id="h-ci" ref={headingRef} tabIndex={-1}>
         {step === "mood" ? "How are you feeling?" : step === "symptoms" ? "Any symptoms?" : step === "categories" ? "What symptoms do you have?" : symptoms.length ? "Your next steps" : "Thank you!"}
@@ -1078,7 +1157,6 @@ function CheckinScreen({ onClose }: { onClose: () => void }) {
         {symptoms.length ? <CheckinActionSummary symptoms={symptoms} chestPain={painAreas.includes("front:upper")} /> : <div className="pt-card" role="status"><Check size={36} aria-hidden="true" /><p className="lead">Your check-in is complete.</p></div>}
         <button className="pt-btn" type="button" onClick={onClose}>Close</button>
       </>}
-      <p className="pt-questionnaire-note">Demo only. Your answers are not sent to your care team.</p>
     </section>
   );
 }
@@ -1114,7 +1192,7 @@ function ExpiredScreen({
           type="button"
           onClick={onRestart}
         >
-          DEMO: restart the prototype
+          Back to sign in
         </button>
       </p>
     </section>

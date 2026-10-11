@@ -258,6 +258,10 @@ p {
 .cp-card + .cp-card {
   margin-top: 16px;
 }
+/* Space between a card, grid or panel and whatever follows it on provider pages. */
+.cp-content > :where(.cp-card, .cp-grid2, details, .cp-tabs) + :where(:not(.cp-bar)) {
+  margin-top: 20px;
+}
 .cp-card--sage {
   background: var(--sage-bg);
   color: var(--sage-fg);
@@ -1020,18 +1024,23 @@ p {
 
 /* Countdown */
 .pt-count { display: flex; gap: 16px; align-items: center; }
-.pt-ring { position: relative; width: 92px; height: 92px; flex: none; }
-.pt-ring svg { transform: rotate(-90deg); }
+.pt-ring { position: relative; width: 112px; height: 112px; flex: none; }
+.pt-ring svg { display: block; transform: rotate(-90deg); }
 .pt-ring b {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--font-serif);
-  font-size: 40px;
+  font-family: var(--font-sans);
+  font-size: 44px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
   line-height: 1;
 }
+/* Trim the number's box to the digit height so it sits in the exact centre of the ring. */
+.pt-ring b > * , .pt-ring b { text-box: trim-both cap alphabetic; }
 
 /* Link cards (home navigation) */
 .pt-linkcard {
@@ -1454,6 +1463,9 @@ h2 { font-size: 22px; }
 .pt-device { width: min(720px, 100%); height: min(980px, calc(100dvh - 64px)); border: 1px solid var(--line); border-radius: 28px; box-shadow: 0 16px 60px rgb(23 62 51 / 8%); }
 .pt-top { padding: 20px 28px; border-bottom: 1px solid var(--line); background: var(--card); }
 .pt-who { padding: 4px 12px; border-radius: 999px; background: var(--panel); font-size: 14px; }
+.pt-top-meta { margin-inline-start: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; text-align: end; }
+.pt-top-meta .pt-who { margin: 0; }
+.pt-today { font-size: 13px; color: var(--muted); white-space: nowrap; }
 .pt-main { padding: 20px 28px 32px; font-size: 18px; }
 .pt-main h1 { font-size: clamp(28px, 4vw, 36px); margin-bottom: 12px; }
 .pt-main h2 { font-size: 23px; }
@@ -1518,7 +1530,6 @@ h2 { font-size: 22px; }
 .pt-clinical h1, .pt-clinical h2, .pt-clinical h3 { letter-spacing: -.02em; }
 .pt-clinical .pt-top { border-top: 3px solid var(--primary); }
 .pt-portal-brand { display: flex; flex-direction: column; gap: 4px; }
-.pt-portal-brand > span:last-child { font-size: 12px; color: var(--muted); }
 .pt-demo-label { font-size: 11px; color: var(--muted); letter-spacing: .02em; }
 .pt-clinical .pt-proto { padding-top: calc(6px + env(safe-area-inset-top)); padding-bottom: 6px; }
 .pt-clinical .pt-proto .demo { min-height: 32px; font-size: 11px; border: 1px solid var(--line); border-radius: 4px; background: var(--card); color: var(--muted); }
@@ -1691,7 +1702,7 @@ h2 { font-size: 22px; }
 .pt-clinical { --paper: #f8fafc; --card: #fff; --panel: #f0f5f9; }
 
 /* Brand accents on decorative icons; clinical status colors keep their meaning. */
-:root { --brand-red: #b3263e; --brand-red-soft: #fbf0f2; }
+:root { --brand-red: #b3263e; --brand-red-soft: #fbf0f2; --brand-navy: #172a4f; }
 .portal-feature-icon .lucide-pill path:last-child { stroke: var(--brand-red); }
 .portal-feature-icon .lucide-calendar-days path { stroke: var(--brand-red); }
 .portal-staff-link > .lucide-stethoscope { color: var(--brand-red); }
@@ -1703,7 +1714,7 @@ h2 { font-size: 22px; }
 /* Visual daily medicine timeline: large names and doses, one time period at a time. */
 .pt-schedule-note { display: flex; align-items: flex-start; gap: 10px; font-size: 15px; line-height: 1.5; color: var(--muted); background: var(--panel); border-radius: 6px; padding: 12px 14px; margin: 18px 0 24px; }
 .pt-schedule-note svg { flex-shrink: 0; margin-top: 2px; }
-.pt-day-timeline { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); position: relative; margin-bottom: 28px; isolation: isolate; }
+.pt-day-timeline { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); position: relative; margin-bottom: 28px; isolation: isolate; }
 .pt-day-timeline::before { content: ""; position: absolute; inset-inline: 12%; top: 29px; height: 2px; background: var(--line); z-index: -1; }
 .pt-time-slot { display: flex; align-items: center; flex-direction: column; gap: 5px; background: transparent; border: 0; padding: 0 4px 12px; border-radius: 6px; color: var(--muted); min-width: 0; }
 .pt-time-icon { display: grid; place-items: center; background: var(--card); border: 2px solid var(--line); width: 58px; height: 58px; border-radius: 50%; margin-bottom: 8px; }
@@ -1804,6 +1815,11 @@ h2 { font-size: 22px; }
 .pt-profile-warning { color: var(--amber-fg); background: var(--amber-bg); padding: 10px; border-radius: 4px; }
 .pt-profile-urgent h2 { color: var(--red-fg); }
 .pt-card .pt-language-setting select { max-width: none; width: 100%; margin-top: 12px; }
+.pt-profile-split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+.pt-profile-split > .pt-card { margin: 0; display: flex; flex-direction: column; }
+.pt-progress-card .pt-btn { width: 100%; margin-top: auto; min-height: 44px; font-size: 16px; line-height: 1.2; }
+.pt-progress-card h2 { margin-bottom: 12px; }
+.pt-profile-split .pt-language-setting { margin-top: auto; }
 .pt-support-form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .pt-support-form input { flex: 1 1 140px; min-width: 0; min-height: 48px; background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 5px; padding: 8px 10px; font-size: 16px; font-family: inherit; }
 .pt-support-form .pt-btn { flex: none; }
@@ -1812,6 +1828,23 @@ h2 { font-size: 22px; }
 .pt-support-member { flex: 1; min-width: 120px; display: flex; flex-direction: column; font-size: 18px; }
 .pt-support-member bdi { color: var(--muted); font-size: 16px; }
 .pt-support-enrolled { display: inline-flex; align-items: center; gap: 6px; min-height: 48px; padding: 8px 16px; border-radius: 999px; background: var(--sage-bg); color: var(--sage-fg); font-size: 18px; font-weight: 700; }
+/* Profile page: larger text throughout for older readers. */
+.pt-main .pt-profile { font-size: 21px; }
+.pt-main .pt-profile h1 { font-size: clamp(34px, 5vw, 42px); }
+.pt-main .pt-profile h2 { font-size: 27px; }
+.pt-profile .pt-profile-info p { font-size: 21px; }
+.pt-profile .pt-card .pt-language-setting select { font-size: 20px; min-height: 52px; }
+.pt-profile .pt-progress-card .pt-btn { font-size: 19px; min-height: 52px; }
+.pt-profile .pt-support-form input { font-size: 20px; min-height: 52px; }
+.pt-profile .pt-btn--sm { font-size: 20px; min-height: 52px; }
+.pt-profile .pt-support-member { font-size: 21px; }
+.pt-profile .pt-support-member bdi { font-size: 19px; }
+.pt-profile .pt-support-enrolled { font-size: 20px; min-height: 52px; }
+.pt-profile .pt-profile-discharge > summary { font-size: 26px; }
+.pt-profile .pt-profile-discharge > p { font-size: 20px; }
+.pt-main .pt-profile .pt-profile-discharge h2 { font-size: 24px; }
+.pt-profile .pt-profile-discharge p, .pt-profile .pt-profile-discharge li { font-size: 21px; }
+.pt-profile .pt-profile-med h3 { font-size: 23px; }
 @media (max-width: 480px) { .pt-clinical .pt-tabs button { font-size: 12px; } }
 
 .pt-med-taken-count { display: inline-block; margin-inline-start: 6px; font-size: 14px; color: var(--muted); }
@@ -1822,6 +1855,31 @@ h2 { font-size: 22px; }
 .pt-dose-checkbox span { font-size: 17px; line-height: 1.5; overflow-wrap: anywhere; }
 .pt-dose-checkbox--taken span { color: var(--muted); }
 
+/* Home tab: large, high-contrast cards for older readers. */
+.pt-main .pt-home h1 { font-size: clamp(34px, 6vw, 42px); }
+.pt-main .pt-home .lead { font-size: 20px; line-height: 1.5; }
+.pt-main .pt-home h2 { font-size: 26px; }
+.pt-home .pt-card { padding: 24px; margin: 18px 0; border-radius: 16px; }
+.pt-home-heading { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+.pt-main .pt-home-heading h2 { margin: 0; }
+.pt-home-icon { display: inline-grid; place-items: center; width: 52px; height: 52px; flex: none; border-radius: 50%; background: var(--blue-bg); color: var(--primary); }
+.pt-home-icon--blue { background: var(--blue-bg); color: var(--primary); }
+.pt-home-icon--red { background: var(--brand-red-soft); color: var(--brand-red); }
+.pt-home-icon--sage { background: var(--sage-bg); color: var(--sage-fg); }
+.pt-home-today { border: 2px solid var(--primary); }
+.pt-home-today-count { font-size: 24px; font-weight: 700; color: var(--ink); margin: 4px 0 0; }
+.pt-home-today .pt-plan-progress { height: 14px; margin: 14px 0 20px; }
+.pt-home-today .pt-btn { justify-content: space-between; text-align: start; }
+.pt-home .pt-count { gap: 22px; background: var(--sage-bg); color: var(--sage-fg); border-color: transparent; }
+.pt-count-note { margin: 8px 0 0; font-size: 20px; line-height: 1.45; }
+.pt-home-why p { margin: 0; font-size: 21px; line-height: 1.6; }
+.pt-home .pt-home-actions .pt-linkcard { min-height: 88px; padding: 18px 20px; font-size: 22px; }
+.pt-home .pt-home-actions .pt-linkcard b { font-size: 22px; }
+.pt-home-today .go { margin-inline-start: auto; flex: none; }
+[dir="rtl"] .pt-home .go { transform: scaleX(-1); }
+@media (max-width: 420px) {
+  .pt-home .pt-count { flex-direction: column; align-items: flex-start; }
+}
 .pt-home-actions { margin-top: 24px; }
 .pt-home-actions .pt-linkcard { min-height: 80px; padding: 18px; text-align: start; }
 .pt-home-actions .pt-linkcard > svg:first-child { color: var(--ink); flex-shrink: 0; }
@@ -1873,6 +1931,10 @@ h2 { font-size: 22px; }
 .pt-call-action:hover { filter: brightness(.97); }
 
 /* Simple, accessible daily questionnaire. */
+.pt-questionnaire { position: relative; }
+.pt-questionnaire-close { position: absolute; top: 0; inset-inline-end: 0; display: grid; place-items: center; width: 48px; height: 48px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--ink); cursor: pointer; }
+.pt-questionnaire-close:hover { background: var(--line); }
+.pt-questionnaire-kicker, .pt-questionnaire h1 { padding-inline-end: 56px; }
 .pt-questionnaire-kicker { color: var(--muted); font-size: 18px; margin-bottom: 8px; }
 .pt-questionnaire h1:focus { outline: none; }
 .pt-mood-options, .pt-symptom-options { border: 0; padding: 0; margin: 24px 0; }
@@ -1898,7 +1960,6 @@ h2 { font-size: 22px; }
 .pt-pill-case::before { display: none; }
 .pt-pill-case .pt-time-slot { --compartment: #fdf0cc; --compartment-border: #d3a447; --compartment-ink: #674612; position: relative; overflow: visible; gap: 0; padding: 0; border: 2px solid var(--compartment-border); border-radius: 12px; background: white; color: var(--compartment-ink); box-shadow: 0 3px 0 var(--compartment-border); }
 .pt-pill-case .pt-pill-compartment--midday { --compartment: #dcefe7; --compartment-border: #6d9b86; --compartment-ink: #244f3c; }
-.pt-pill-case .pt-pill-compartment--evening { --compartment: #f9e3e4; --compartment-border: #c98289; --compartment-ink: #7b3041; }
 .pt-pill-case .pt-pill-compartment--night { --compartment: #e7e4f6; --compartment-border: #9388bd; --compartment-ink: #493f72; }
 .pt-pill-lid { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; padding: 18px 5px 16px; border-radius: 9px 9px 0 0; border-top: 5px solid var(--compartment-border); background: var(--compartment); border-bottom: 2px solid var(--compartment-border); }
 .pt-pill-case .pt-time-icon { width: 38px; height: 38px; border: 0; background: transparent; color: inherit; margin: 0; }
@@ -1911,14 +1972,13 @@ h2 { font-size: 22px; }
 .pt-pill-case .pt-time-slot--active .pt-pill-tab { background: var(--primary); border-color: var(--primary); color: white; }
 .pt-pill-case .pt-time-slot:focus-visible { outline: 3px solid var(--focus); outline-offset: 5px; }
 @media (max-width: 600px) {
-  .pt-pill-case { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 14px; }
+  .pt-pill-case { gap: 10px; padding: 12px 10px 20px; }
   .pt-pill-lid { padding: 12px 5px; }
   .pt-pill-well { padding: 14px 6px 20px; }
 }
 
 /* Time-of-day task cards share the medicine organizer palette. */
 .pt-daily-plan .pt-priority-period { --period-bg: #fdf0cc; --period-edge: #d3a447; --period-ink: #674612; border: 1px solid var(--period-edge); border-radius: 12px; padding: 0; overflow: hidden; margin-top: 20px; background: white; box-shadow: 0 3px 0 color-mix(in srgb, var(--period-edge) 35%, white); }
-.pt-daily-plan .pt-priority-period--evening { --period-bg: #f9e3e4; --period-edge: #c98289; --period-ink: #7b3041; }
 .pt-daily-plan .pt-priority-period--night { --period-bg: #e7e4f6; --period-edge: #9388bd; --period-ink: #493f72; }
 .pt-period-heading { display: flex; align-items: center; gap: 12px; padding: 16px; background: var(--period-bg); color: var(--period-ink); border-bottom: 1px solid var(--period-edge); }
 .pt-period-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 12px; background: rgb(255 255 255 / 65%); flex-shrink: 0; }
@@ -1953,10 +2013,10 @@ h2 { font-size: 22px; }
 /* Simple medicine rows inside the same time-of-day cards as To-do. */
 .pt-simple-meds { --period-bg: #fdf0cc; --period-edge: #d3a447; --period-ink: #674612; border: 1px solid var(--period-edge); border-radius: 12px; overflow: hidden; background: white; }
 .pt-simple-meds--midday { --period-bg: #dcefe7; --period-edge: #6d9b86; --period-ink: #244f3c; }
-.pt-simple-meds--evening { --period-bg: #f9e3e4; --period-edge: #c98289; --period-ink: #7b3041; }
 .pt-simple-meds--night { --period-bg: #e7e4f6; --period-edge: #9388bd; --period-ink: #493f72; }
 .pt-simple-meds .pt-dose-heading { margin: 0; padding: 16px; background: var(--period-bg); color: var(--period-ink); border-bottom: 1px solid var(--period-edge); gap: 12px; }
 .pt-simple-meds .pt-dose-heading h2 { margin: 0 0 4px; font-size: 24px; color: inherit; }
+.pt-simple-meds .pt-dose-heading > .pt-period-icon { margin-inline-start: 0; } /* icon and label on the left */
 .pt-simple-meds .pt-dose-list { gap: 0; }
 .pt-simple-meds .pt-dose-card { border: 0; border-radius: 0; padding: 20px; }
 .pt-simple-meds .pt-dose-card + .pt-dose-card { border-top: 1px solid var(--line); }

@@ -40,7 +40,7 @@ export interface UIStrings {
 export const UI: Record<Language, UIStrings> = {
   en: {
     hello: "Hello, Eleanor.",
-    sub: "Here is your plan from RWJ New Brunswick.",
+    sub: "Here is your plan from Robert Wood Johnson University Hospital - New Brunswick.",
     play: "Play my plan",
     playSub: "Listen to your whole plan out loud.",
     daysLeft: (n) => `${n} days left`,
@@ -71,7 +71,7 @@ export const UI: Record<Language, UIStrings> = {
   },
   es: {
     hello: "Hola, Eleanor.",
-    sub: "Este es su plan de RWJ New Brunswick.",
+    sub: "Este es su plan de Robert Wood Johnson University Hospital - New Brunswick.",
     play: "Escuchar mi plan",
     playSub: "Escuche todo su plan en voz alta.",
     daysLeft: (n) => `Faltan ${n} días`,
@@ -102,7 +102,7 @@ export const UI: Record<Language, UIStrings> = {
   },
   zh: {
     hello: "您好，Eleanor。",
-    sub: "这是您来自 RWJ New Brunswick 的出院计划。",
+    sub: "这是您来自 Robert Wood Johnson University Hospital - New Brunswick 的出院计划。",
     play: "播放我的计划",
     playSub: "大声朗读您的整个计划。",
     daysLeft: (n) => `还剩 ${n} 天`,
@@ -133,7 +133,7 @@ export const UI: Record<Language, UIStrings> = {
   },
   ar: {
     hello: "مرحبًا يا Eleanor.",
-    sub: "هذه خطتك من RWJ New Brunswick.",
+    sub: "هذه خطتك من Robert Wood Johnson University Hospital - New Brunswick.",
     play: "استمع إلى خطتي",
     playSub: "استمع إلى خطتك كاملة بصوت عالٍ.",
     daysLeft: (n) => `تبقّى ${n} يومًا`,

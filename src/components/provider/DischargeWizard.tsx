@@ -12,14 +12,14 @@ import { Stepper } from "@/components/ui/Stepper";
 import { ToastProvider, useToast } from "@/components/ui/Toast";
 import { clsx } from "@/lib/clsx";
 import { Upload, List, Check, ShieldCheck, Lock, AlertTriangle, ChevronRight, RefreshCw, Copy, Globe } from "lucide-react";
-import { api } from "@/components/client-api";
+import { api, isAbort } from "@/components/client-api";
 import { DocumentDrop, MAX_UPLOAD_BYTES } from "@/components/document-drop";
 import type { GeneratedContent } from "@/lib/backend/contracts";
 import type { Language, PlanContent } from "@/types/plan";
 import { TRANSLATION_LANGUAGES, type TranslationLanguage as TransLang } from "@/lib/languages";
 import { UI } from "@/lib/i18n";
 import { applyTranslation } from "@/lib/translation-fields";
-import { toPlanContent, type PlanLanguage, readingGrade, patientText, plainLanguageSwaps, openMedicationFlags } from "@/lib/plan-adapter";
+import { toPlanContent, medicationSchedule, type PlanLanguage, readingGrade, patientText, plainLanguageSwaps, openMedicationFlags } from "@/lib/plan-adapter";
 import { planStatus } from "@/lib/discharge-status";
 
 /**
@@ -88,13 +88,25 @@ function WizardInner({ id }: { id: string }) {
 
   const load = useCallback(async () => setData(await api("discharges/" + id)), [id]);
 
+  const generation = useRef<AbortController | null>(null);
+  const [cancelling, setCancelling] = useState(false);
   const generate = useCallback(async () => {
+    const controller = new AbortController();
+    generation.current = controller;
     setGenerating(true); setError(""); setSeconds(0);
     const timer = setInterval(() => setSeconds((s) => s + 1), 1000);
-    try { setData(await api(`discharges/${id}/process`, "POST", {})); }
-    catch (e) { setError((e as Error).message); await load().catch(() => {}); }
-    finally { clearInterval(timer); setGenerating(false); }
+    try { setData(await api(`discharges/${id}/process`, "POST", {}, controller.signal)); }
+    catch (e) { if (!isAbort(e)) { setError((e as Error).message); await load().catch(() => {}); } }
+    finally { clearInterval(timer); if (generation.current === controller) { generation.current = null; setGenerating(false); } }
   }, [id, load]);
+  // Stops waiting and tells the server to discard the running draft.
+  const cancelGeneration = useCallback(async () => {
+    setCancelling(true); setError("");
+    generation.current?.abort(); generation.current = null;
+    try { setData(await api(`discharges/${id}/process/cancel`, "POST", {})); toast("Draft generation cancelled."); }
+    catch (e) { setError((e as Error).message); await load().catch(() => {}); }
+    finally { setGenerating(false); setCancelling(false); }
+  }, [id, load, toast]);
 
   useEffect(() => {
     if (isNew) return;
@@ -134,7 +146,7 @@ function WizardInner({ id }: { id: string }) {
       {stage === "review" && !data && !error && <p className="muted">Loading discharge…</p>}
       {stage === "review" && data && (
         generating || state === "PROCESSING"
-          ? <GeneratingCard seconds={seconds} stale={!generating} onRefresh={() => load().catch((e) => setError(e.message))} />
+          ? <GeneratingCard seconds={seconds} stale={!generating && !cancelling} cancelling={cancelling} onCancel={cancelGeneration} onRefresh={() => load().catch((e) => setError(e.message))} />
           : !content
             ? <Card style={{ textAlign: "center", padding: 32 }}>
                 <p className="muted">{data.sources.length ? "No plain-language draft yet." : "No discharge document was saved for this record."}</p>
@@ -180,9 +192,9 @@ function CaptureStep({ busy, run, onCreated }: { busy: string; run: (label: stri
     <>
       <h1>Capture instructions</h1>
       <Card style={{ margin: "16px 0" }}>
-        <h3 className="muted">Patient (synthetic)</h3>
+        <h3 className="muted">Patient</h3>
         <label className="cp-label" htmlFor="pname">Display name</label>
-        <input id="pname" className="cp-input" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} placeholder="e.g. Synthetic Patient A" disabled={!!busy} />
+        <input id="pname" className="cp-input" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} placeholder="Patient name" disabled={!!busy} />
         <label className="cp-label" htmlFor="pwhen">Discharge date and time</label>
         <input id="pwhen" className="cp-input tn" type="datetime-local" value={when} max={max} onChange={(e) => setWhen(e.target.value)} disabled={!!busy} style={{ maxWidth: 320 }} />
         <p className="muted" style={{ margin: "4px 0 8px", fontSize: 13 }}>Time zone: {tz || "…"}. The patient&apos;s access ends 30 days after this time.</p>
@@ -224,7 +236,7 @@ function CaptureStep({ busy, run, onCreated }: { busy: string; run: (label: stri
   );
 }
 
-function GeneratingCard({ seconds, stale, onRefresh }: { seconds: number; stale: boolean; onRefresh: () => void }) {
+function GeneratingCard({ seconds, stale, cancelling, onCancel, onRefresh }: { seconds: number; stale: boolean; cancelling: boolean; onCancel: () => void; onRefresh: () => void }) {
   const pct = Math.min(95, Math.round((seconds / 45) * 100));
   return (
     <Card>
@@ -232,12 +244,16 @@ function GeneratingCard({ seconds, stale, onRefresh }: { seconds: number; stale:
       {stale ? (
         <>
           <p className="muted">A draft is already being generated for this discharge.</p>
-          <Button variant="ghost" onClick={onRefresh}><RefreshCw size={16} aria-hidden="true" />Refresh</Button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Button variant="ghost" onClick={onRefresh}><RefreshCw size={16} aria-hidden="true" />Refresh</Button>
+            <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+          </div>
         </>
       ) : (
         <>
           <p className="muted">{seconds}s · usually 40–90 seconds. Every statement is checked against the source text before it is saved.</p>
           <div className="cp-prog" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${pct}%` }} /></div>
+          <Button variant="ghost" onClick={onCancel} disabled={cancelling} style={{ marginTop: 14 }}>{cancelling ? "Cancelling…" : "Cancel"}</Button>
         </>
       )}
     </Card>
@@ -426,7 +442,7 @@ function PlanPreview({ plan, lang = "en" }: { plan: PlanContent; lang?: PlanLang
           <b>{label}</b>
           <ul>
             {plan.medications[k].map((m) => (
-              <li key={m.name}><b>{m.name}{m.dose ? ` ${m.dose}` : ""}</b>{m.frequency ? `, ${m.frequency}.` : "."} {m.note ?? ""}</li>
+              <li key={m.name}><b>{m.name}{m.dose ? ` ${m.dose}` : ""}</b>{medicationSchedule(m) ? `, ${medicationSchedule(m)}.` : "."} {m.note ?? ""}</li>
             ))}
           </ul>
         </div>
@@ -477,38 +493,50 @@ function TranslateStep({ planId, content, translations, setTranslations, fixture
   const [tab, setTab] = useState<TransLang | undefined>(translations[0]?.language);
   const [working, setWorking] = useState(""), [seconds, setSeconds] = useState(0), [error, setError] = useState("");
   const [queue, setQueue] = useState<TransLang[]>([]);
+  const running = useRef<AbortController | null>(null);
   const [editing, setEditing] = useState<{ path: string; text: string } | null>(null);
   const t = translations.find((x) => x.language === tab);
   const base = `discharges/${planId}/translations/${tab}`;
   const translated = (Object.keys(LANGS) as TransLang[]).filter((k) => translations.some((x) => x.language === k));
   const pending = selected.filter((k) => !shown.includes(k) && !translations.some((x) => x.language === k && x.current));
-  async function act(label: string, fn: () => Promise<TranslationView>, message: string) {
+  async function act(label: string, fn: (signal: AbortSignal) => Promise<TranslationView>, message: string) {
+    const controller = new AbortController();
+    running.current = controller;
     setWorking(label); setError(""); setSeconds(0);
     const timer = setInterval(() => setSeconds((s) => s + 1), 1000);
     try {
-      const next = await fn();
+      const next = await fn(controller.signal);
       setTranslations((list) => [...list.filter((x) => x.language !== next.language), next]);
       setEditing(null); toast(message);
-    } catch (e) { setError((e as Error).message); }
-    finally { clearInterval(timer); setWorking(""); }
+    } catch (e) { if (!isAbort(e)) setError((e as Error).message); }
+    finally { clearInterval(timer); setWorking(""); running.current = null; }
+  }
+  function cancel() {
+    running.current?.abort();
+    toast("Translation cancelled.");
   }
   // Translates each selected language in turn; each one is checked line by line before it is shown.
   async function translateSelected() {
+    const controller = new AbortController(), { signal } = controller;
+    running.current = controller;
     setWorking("translate"); setError(""); setSeconds(0); setQueue(pending); setEditing(null);
     const timer = setInterval(() => setSeconds((s) => s + 1), 1000);
     const real = fixture ? pending.filter((l) => l === "es") : pending, simulated = pending.filter((l) => !real.includes(l));
-    const wait = simulated.length ? new Promise((resolve) => setTimeout(resolve, DEMO_TRANSLATE_MS)) : Promise.resolve();
+    const wait = simulated.length
+      ? new Promise<void>((resolve) => { const t = setTimeout(resolve, DEMO_TRANSLATE_MS); signal.addEventListener("abort", () => { clearTimeout(t); resolve(); }, { once: true }); })
+      : Promise.resolve();
     try {
       for (const lang of real) {
-        const next: TranslationView = await api(`discharges/${planId}/translations/${lang}`, "POST");
+        const next: TranslationView = await api(`discharges/${planId}/translations/${lang}`, "POST", undefined, signal);
         setTranslations((list) => [...list.filter((x) => x.language !== next.language), next]);
         setQueue((q) => q.filter((l) => l !== lang)); setTab(lang);
       }
       await wait;
+      if (signal.aborted) return;
       setShown((list) => [...list, ...simulated]);
       toast(pending.length === 1 ? `${LANGS[pending[0]]} translated and checked.` : `${pending.length} languages translated and checked.`);
-    } catch (e) { setError((e as Error).message); }
-    finally { clearInterval(timer); setWorking(""); setQueue([]); }
+    } catch (e) { if (!isAbort(e)) setError((e as Error).message); }
+    finally { clearInterval(timer); setWorking(""); setQueue([]); running.current = null; }
   }
   const flagged = t?.fields.filter((f) => f.problems.length) ?? [];
   const valuesOk = !!t && !t.fields.some((f) => f.problems.some((p) => /missing or changed|adds|medicine name|does not contain/i.test(p)));
@@ -550,6 +578,7 @@ function TranslateStep({ planId, content, translations, setTranslations, fixture
           <h2>Translating to {list(queue) || "the selected languages"} and checking every line…</h2>
           <p className="muted">{seconds}s · usually under a minute per language.</p>
           <div className="cp-prog" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${pct}%` }} /></div>
+          <Button variant="ghost" onClick={cancel} style={{ marginTop: 14 }}>Cancel translation</Button>
         </Card>
       ) : !tab || !t ? null : (
         <>
@@ -566,7 +595,7 @@ function TranslateStep({ planId, content, translations, setTranslations, fixture
           {!t.current ? (
             <Card style={{ textAlign: "center", padding: 36 }}>
               <p><b>The English plan changed after this translation.</b> Translate it again.</p>
-              <Button onClick={() => act("translate", () => api(base, "POST"), `${LANGS[tab]} translated and checked.`)} disabled={!!working} style={{ marginTop: 8 }}>
+              <Button onClick={() => act("translate", (signal) => api(base, "POST", undefined, signal), `${LANGS[tab]} translated and checked.`)} disabled={!!working} style={{ marginTop: 8 }}>
                 <Globe size={18} aria-hidden="true" />
                 Translate to {LANGS[tab]} again
               </Button>
@@ -627,7 +656,7 @@ function TranslateStep({ planId, content, translations, setTranslations, fixture
           </div>
 
           <div className="cp-bar">
-            <Button variant="ghost" disabled={!!working} onClick={() => act("translate", () => api(base, "POST"), `${LANGS[tab]} translated again and checked.`)}><RefreshCw size={16} aria-hidden="true" />Translate again</Button>
+            <Button variant="ghost" disabled={!!working} onClick={() => act("translate", (signal) => api(base, "POST", undefined, signal), `${LANGS[tab]} translated again and checked.`)}><RefreshCw size={16} aria-hidden="true" />Translate again</Button>
             <span className="cp-bar-sp" />
             {t.status === "published" ? (
               <Chip tone="sage"><Check size={14} aria-hidden="true" />{LANGS[tab]} published</Chip>
@@ -687,8 +716,7 @@ function PublishStep({ data, languages, busy, run, toast, reload, onBack }: {
         <div>
           {issued ? (
             <Banner tone="blue" icon="lock">
-              <Chip tone="blue">Demo: no text message is sent</Chip>
-              <div style={{ fontSize: 16, marginTop: 6 }}>
+              <div style={{ fontSize: 16 }}>
                 Give the patient this code: <b className="tn" style={{ fontSize: 22, letterSpacing: 2 }}>{issued.code.slice(0, 3)}-{issued.code.slice(3)}</b>
               </div>
               <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Shown once. It works until the plan expires; 5 wrong tries lock the link.</div>

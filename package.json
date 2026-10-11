@@ -2,7 +2,7 @@
   "name": "clearpath",
   "version": "0.1.0",
   "private": true,
-  "description": "ClearPath \u2014 AI-powered hospital discharge platform (Rutgers Health Hackathon 2026). Frontend reconstructed from Blueprint HTML prototypes. Synthetic data only.",
+  "description": "ClearPath — AI-powered hospital discharge platform (Rutgers Health Hackathon 2026). Frontend reconstructed from Blueprint HTML prototypes. Synthetic data only.",
   "type": "module",
   "scripts": {
     "dev": "next dev",
@@ -32,6 +32,7 @@
     "clsx": "^2.1.1",
     "iron-session": "^8.0.4",
     "jose": "6.2.10",
+    "jspdf": "4.2.1",
     "lucide-react": "0.468.0",
     "mammoth": "^1.13.0",
     "mongodb": "6.20.0",

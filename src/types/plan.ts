@@ -42,6 +42,8 @@ export const medicationSchema = z.object({
   /** Tablets per dose, explicitly supplied by pharmacy or demo data; never inferred from mg. */
   tabletCount: z.number().positive().optional(),
   frequency: z.string().optional(),
+  /** How long to keep taking it ("for 3 additional days"), shown with the frequency where space allows. */
+  duration: z.string().optional(),
   purpose: z.string().optional(),
   /** Patient-readable route, only when present in the source prescription. */
   route: z.string().optional(),
@@ -62,6 +64,8 @@ export const appointmentSchema = z.object({
   type: z.string(),
   specialty: z.string().optional(),
   when: z.string().optional(),
+  /** ISO start time, when known; used to find the next appointment. */
+  startsAt: z.string().optional(),
   /** Clinic or lab name, shown above the address. */
   clinic: z.string().optional(),
   location: z.string().optional(),

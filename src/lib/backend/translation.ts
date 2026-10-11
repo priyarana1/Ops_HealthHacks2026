@@ -100,14 +100,16 @@ async function approved(planId:string,owner:string){
  const plan=await signedContent(episode);return {episode,plan,content:generatedContent.parse(plan.content)};
 }
 /** For a fixture plan whose English wording is unedited, the pre-reviewed Spanish lines (demo-fixture.ts); otherwise null. */
-async function fixtureSpanish(episodeId:string,modelId:string|undefined,content:GeneratedContent):Promise<TranslatedField[]|null>{
+// Waits, ending early if the request is cancelled.
+const pause=(ms:number,signal?:AbortSignal)=>new Promise<void>(resolve=>{const timer=setTimeout(resolve,ms);signal?.addEventListener('abort',()=>{clearTimeout(timer);resolve();},{once:true});});
+async function fixtureSpanish(episodeId:string,modelId:string|undefined,content:GeneratedContent,signal?:AbortSignal):Promise<TranslatedField[]|null>{
  if(modelId!==DEMO_FIXTURE_MODEL)return null;
  const original=demoFixtureContent(await SourceModel.find({episodeId}).lean());
  const originalText=new Map(original?translatableFields(original).map(f=>[f.path,f.text]):[]);
  const fields=translatableFields(content);
  if(!fields.every(f=>originalText.get(f.path)===f.text && DEMO_SPANISH[f.path]))return null;
  const delay=Number(process.env.DEMO_TRANSLATION_DELAY_MS ?? 35000);
- if(delay>0)await new Promise(resolve=>setTimeout(resolve,Math.min(delay,120000)));
+ if(delay>0)await pause(Math.min(delay,120000),signal);
  return fields.map(f=>({path:f.path,source:f.text,text:DEMO_SPANISH[f.path],problems:[]}));
 }
 const statusOf=(fields:TranslatedField[])=>fields.some(f=>f.problems.length)?'blocked' as const:'verified' as const;
@@ -118,11 +120,13 @@ export async function listTranslations(planId:string,owner:string){
  const translations=await TranslationModel.find({episodeId:episode.episodeId}).lean();
  return {translations:translations.map(t=>view(t,episode.version))};
 }
-export async function translatePlan(planId:string,owner:string,lang:string){
+/** Translates and checks the approved plan. If the request is cancelled (`signal`), nothing is saved. */
+export async function translatePlan(planId:string,owner:string,lang:string,signal?:AbortSignal){
  const language=translationLanguage.parse(lang),{episode,plan,content}=await approved(planId,owner);
- const fixture=language==='es'?await fixtureSpanish(episode.episodeId,plan.model?.modelId,content):null;
+ const fixture=language==='es'?await fixtureSpanish(episode.episodeId,plan.model?.modelId,content,signal):null;
  const client=fixture?{modelId:DEMO_FIXTURE_MODEL,region:'none'}:modelClient();
  const fields=fixture ?? await translateAndCheck(translatableFields(content),language,content.medications.map(m=>m.name));
+ if(signal?.aborted)throw new AppError(409,'Translation cancelled.');
  const saved=await TranslationModel.findOneAndUpdate({episodeId:episode.episodeId,language},{$set:{basedOnVersion:episode.version,status:statusOf(fields),fields,model:{modelId:client.modelId,region:client.region,generatedAt:new Date()},updatedAt:new Date(),expiresAt:episode.expiresAt},$unset:{publishedBy:1,publishedAt:1}},{upsert:true,new:true}).lean();
  return view(saved!,episode.version);
 }

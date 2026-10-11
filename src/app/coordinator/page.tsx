@@ -72,7 +72,6 @@ function CoordinatorInner() {
   const router = useRouter();
   const toast = useToast();
   const [view, setView] = useState<"esc" | "audit">("esc");
-  const [mode, setMode] = useState<"demo" | "prod">("demo");
   const [audit, setAudit] = useState<AuditRow[]>(() => makeAudit());
   const [tt, setTt] = useState(false);
   const [drawer, setDrawer] = useState<Escalation | null>(null);
@@ -146,25 +145,6 @@ function CoordinatorInner() {
             Role: Care Coordinator — Sam Ortiz
           </span>
           <span className="cp-topbar-sp" />
-          <span style={{ display: "inline-flex", gap: 8, alignItems: "center", fontWeight: 700, fontSize: 13 }}>
-            Mode:
-            <span className="cp-seg-mode" role="group" aria-label="Mode">
-              <button
-                className={clsx(mode === "demo" && "cp-seg--on")}
-                aria-pressed={mode === "demo"}
-                onClick={() => setMode("demo")}
-              >
-                Demo
-              </button>
-              <button
-                className={clsx(mode === "prod" && "cp-seg--on")}
-                aria-pressed={mode === "prod"}
-                onClick={() => setMode("prod")}
-              >
-                Production
-              </button>
-            </span>
-          </span>
           <Button variant="ghost" size="sm" onClick={() => router.push("/")}>
             Exit
           </Button>
@@ -323,8 +303,7 @@ function CoordinatorInner() {
                 </div>
               </Card>
 
-              {mode === "demo" ? (
-                <Card>
+              <Card>
                   <h2>Prove the self-destruct</h2>
                   <p className="muted">
                     Instead of waiting 30 days, this control moves the clock
@@ -337,20 +316,14 @@ function CoordinatorInner() {
                     style={{ borderWidth: 3 }}
                   >
                     <Clock size={18} aria-hidden="true" />
-                    DEMO ONLY — Time-Travel: expire DSC-7Q2K now
+                    Time-Travel: expire DSC-7Q2K now
                   </Button>
                   {tt && (
                     <Button variant="ghost" onClick={resetDemo} style={{ marginLeft: 8 }}>
-                      Reset demo
+                      Reset
                     </Button>
                   )}
                 </Card>
-              ) : (
-                <Banner tone="blue" icon="lock">
-                  Time-Travel is hidden in Production mode. The endpoint returns
-                  403.
-                </Banner>
-              )}
 
               {tt && (
                 <Card>

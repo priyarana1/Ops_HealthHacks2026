@@ -74,6 +74,21 @@ export async function processDischarge(planId:string,owner:string){
   });return snapshot(planId,owner);
  }catch(e){await EpisodeModel.updateOne({_id:claimed._id,version:claimed.version,state:'PROCESSING'},{$set:{state:episode.state},$unset:{processingStartedAt:1}});throw e;}
 }
+/**
+ * Cancels a running AI draft: the discharge returns to its previous state and the version changes, so the
+ * running job's result is discarded when it finishes.
+ */
+export async function cancelProcessing(planId:string,owner:string){
+ const episode=await ownedEpisode(planId,owner);
+ if(episode.state!=='PROCESSING')return snapshot(planId,owner);
+ const plan=await ClinicalPlanModel.findOne({episodeId:episode.episodeId}).lean();
+ await transaction(async session=>{
+  const saved=await EpisodeModel.findOneAndUpdate({_id:episode._id,version:episode.version,state:'PROCESSING'},{$set:{state:plan?.content?'PENDING_REVIEW':'DRAFT'},$unset:{processingStartedAt:1},$inc:{version:1}},{session,new:true});
+  if(!saved)throw new AppError(409,'Discharge changed. Reload and retry.');
+  await ClinicalPlanModel.updateOne({episodeId:episode.episodeId},{$set:{version:saved.version}},{session});
+ });
+ return snapshot(planId,owner);
+}
 export async function reviewDischarge(planId:string,owner:string,body:unknown){
  const data=reviewInput.parse(body),episode=await ownedEpisode(planId,owner,true);requireState(episode.state,editable);
  const plan=await ClinicalPlanModel.findOne({episodeId:episode.episodeId}),sources=await SourceModel.find({episodeId:episode.episodeId}).lean();

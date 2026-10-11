@@ -57,7 +57,6 @@ export function ProviderShell({
           <span className="cp-lbl">New discharge</span>
         </Link>
         <span className="cp-rail-sp" />
-        <small>Synthetic data only</small>
       </aside>
       <div className="cp-main">
         <header className="cp-topbar">

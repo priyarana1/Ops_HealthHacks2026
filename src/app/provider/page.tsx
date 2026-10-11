@@ -66,7 +66,6 @@ function DashboardInner() {
               <tr key={row.planId}>
                 <td>
                   <b>{row.patientName}</b>
-                  {row.planId === DEMO_PLAN_ID && <span className="muted"> (demo, sample data)</span>}
                 </td>
                 <td className="tn">{row.mrn}</td>
                 <td>{row.diagnosis}</td>
@@ -91,8 +90,7 @@ function DashboardInner() {
         </table>
       </div>
       <p className="muted" style={{ marginTop: 12, fontSize: 13 }}>
-        All names are synthetic. Discharges disappear from this list when their
-        30-day window ends.
+        Discharges disappear from this list when their 30-day window ends.
       </p>
     </ProviderShell>
   );
